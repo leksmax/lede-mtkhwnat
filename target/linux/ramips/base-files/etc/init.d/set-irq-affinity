@@ -1,0 +1,37 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+
+get_irq() {
+	local name="$1"
+	grep -m 1 "$name" /proc/interrupts | cut -d: -f1 | sed 's, *,,'
+}
+
+set_irq_affinity() {
+	local name="$1"
+	local val="$2"
+	local irq="$(get_irq "$name")"
+	[ -n "$irq" ] || return
+}
+
+start() {
+	if grep -q 'processor.*: 2' /proc/cpuinfo; then
+		mask1=4
+		mask2=8
+	elif grep -q 'processor.*: 1' /proc/cpuinfo; then
+		mask1=2
+		mask2=2
+	else
+		return
+	fi
+	rmmod hw_nat
+	insmod /lib/modules/ralink/hw_nat.ko
+	modprobe mt7603e
+	mtkwifi reload
+	iwpriv rax0 set hw_nat_register=1
+	iwpriv rai0 set hw_nat_register=1
+	iwpriv ra0 set hw_nat_register=1
+	iwpriv apclix0 set hw_nat_register=1
+	iwpriv apclii0 set hw_nat_register=1
+	iwpriv apcli0 set hw_nat_register=1
+	}

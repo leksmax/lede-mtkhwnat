@@ -1,0 +1,44 @@
+From 31426d73ad95d10a12d8e54eb93210812fd3f110 Mon Sep 17 00:00:00 2001
+From: tina_chen <ting-yun_chen@alphanetworks.com>
+Date: Thu, 28 Mar 2019 18:11:26 +0800
+Subject: [PATCH 4/5] feat: [IPv6 CERouter] patch from Eric WDL
+
+Dates: 2019/03/26 18:08
+
+- patch for WAN RFC1981 item 10, 11
+
+alphawrt/alpha/kernels/linux-4.4.124 : kernels/linux-4.4.124-mtk-4010.git
+
+Change-Id: I1f311d9f6d71424ba29a5381ad9ee857a39f5cf7
+---
+ net/ipv6/route.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/net/ipv6/route.c b/net/ipv6/route.c
+index 1d7586e..9f99374 100644
+--- a/net/ipv6/route.c
++++ b/net/ipv6/route.c
+@@ -1368,6 +1368,20 @@ static void __ip6_rt_update_pmtu(struct dst_entry *dst, const struct sock *sk,
+ 		return;
+ 
+ 	dst_confirm(dst);
++
++	/* gene@wdl force fragment if next-hop MTU less than IPv6 minimum MTU
++	 * RFC1981
++	 * A node may receive a Packet Too Big message reporting a
++	 * next-hop MTU that is less than the IPv6 minimum link MTU.  In that
++	 * case, the node is not required to reduce the size of subsequent
++	 * packets sent on the path to less than the IPv6 minimun link MTU,
++	 * but rather must include a Fragment header in those packets
++	 */
++	if( mtu < IPV6_MIN_MTU )
++	{
++		dst_metric_set( dst, RTAX_FEATURES, dst_feature(dst, RTAX_FEATURES) | RTAX_FEATURE_ALLFRAG );
++	}
++
+ 	mtu = max_t(u32, mtu, IPV6_MIN_MTU);
+ 	if (mtu >= dst_mtu(dst))
+ 		return;
+-- 
+2.7.4
+

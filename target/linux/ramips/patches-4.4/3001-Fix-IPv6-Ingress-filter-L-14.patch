@@ -1,0 +1,69 @@
+From 56c590140d998bdb20e779147c6fb4e05ff05236 Mon Sep 17 00:00:00 2001
+From: HuanYao Kang <huanayo_kang@alphanetworks.com>
+Date: Fri, 15 Feb 2019 17:59:10 +0800
+Subject: [PATCH 1/5] Fix: IPv6 Ingress filter L-14
+
+alphawrt : basic/alphawrt-mtk-4010
+alphawrt/alpha/kernels/linux-4.4.124 : kernels/linux-4.4.124-mtk-4010.git
+
+Change-Id: I0fe928d3d9cdd64d2c4a8b18b0029a938e3d551c
+---
+ net/ipv6/netfilter/ip6t_REJECT.c | 22 ++++++++++++++++++++++
+ net/ipv6/route.c                 |  1 +
+ 2 files changed, 23 insertions(+)
+
+diff --git a/net/ipv6/netfilter/ip6t_REJECT.c b/net/ipv6/netfilter/ip6t_REJECT.c
+index db29bbf..b1a6f90 100644
+--- a/net/ipv6/netfilter/ip6t_REJECT.c
++++ b/net/ipv6/netfilter/ip6t_REJECT.c
+@@ -28,6 +28,10 @@
+ #include <linux/netfilter/x_tables.h>
+ #include <linux/netfilter_ipv6/ip6_tables.h>
+ #include <linux/netfilter_ipv6/ip6t_REJECT.h>
++// for CE Router Log Test L14
++#include <net/ipv6.h>
++#include <net/ip6_fib.h>
++#include <net/ip6_route.h>
+ 
+ #include <net/netfilter/ipv6/nf_reject.h>
+ 
+@@ -64,6 +68,24 @@ reject_tg6(struct sk_buff *skb, const struct xt_action_param *par)
+ 		nf_send_reset6(net, skb, par->hooknum);
+ 		break;
+ 	case IP6T_ICMP6_POLICY_FAIL:
++#if 1 // for CE Router Log Test L14
++    {
++        struct ipv6hdr *ipv6h = ipv6_hdr(skb);
++        struct fib6_config cfg = {
++                .fc_table = RT6_TABLE_MAIN,
++                .fc_metric = IP6_RT_PRIO_USER,
++                .fc_ifindex = skb->dev->ifindex,
++                .fc_expires = 20,
++                .fc_dst_len = 128,
++                .fc_flags = RTF_UP | RTF_EXPIRES,
++                .fc_nlinfo.nl_net = dev_net(skb->dev),
++                .fc_protocol = RTPROT_KERNEL,
++            };
++           
++        memcpy(&(cfg.fc_dst), &(ipv6h->saddr), sizeof(struct in6_addr));
++        ip6_route_add(&cfg);
++    }
++#endif
+ 		nf_send_unreach6(net, skb, ICMPV6_POLICY_FAIL, par->hooknum);
+ 		break;
+ 	case IP6T_ICMP6_REJECT_ROUTE:
+diff --git a/net/ipv6/route.c b/net/ipv6/route.c
+index 0386efe..1d7586e 100644
+--- a/net/ipv6/route.c
++++ b/net/ipv6/route.c
+@@ -2059,6 +2059,7 @@ out:
+ 
+ 	return err;
+ }
++EXPORT_SYMBOL_GPL(ip6_route_add);
+ 
+ static int __ip6_del_rt(struct rt6_info *rt, struct nl_info *info)
+ {
+-- 
+2.7.4
+

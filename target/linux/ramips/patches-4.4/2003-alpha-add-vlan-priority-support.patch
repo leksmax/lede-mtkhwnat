@@ -1,0 +1,123 @@
+Index: linux-4.4.177/drivers/net/phy/mtk/mt753x/mt753x_swconfig.c
+===================================================================
+--- a/drivers/net/phy/mtk/mt753x/mt753x_swconfig.c
++++ b/drivers/net/phy/mtk/mt753x/mt753x_swconfig.c
+@@ -148,6 +148,7 @@ static void mt753x_apply_mapping(struct
+ 		gsw->vlan_entries[i].member = map->members[i];
+ 		gsw->vlan_entries[i].etags = map->etags[i];
+ 		gsw->vlan_entries[i].vid = map->vids[i];
++		gsw->vlan_entries[i].pcp = 0;
+ 	}
+ }
+ 
+@@ -322,6 +323,39 @@ static int mt753x_get_vid(struct switch_
+ 	return 0;
+ }
+ 
++static int mt753x_set_pcp(struct switch_dev *dev,
++			  const struct switch_attr *attr,
++			  struct switch_val *val)
++{
++	struct gsw_mt753x *gsw = container_of(dev, struct gsw_mt753x, swdev);
++	int vlan;
++	u16 pcp;
++
++	vlan = val->port_vlan;
++	pcp = (u16)val->value.i;
++
++	if (vlan < 0 || vlan >= MT753X_NUM_VLANS)
++		return -EINVAL;
++
++	if (pcp < MT753X_MIN_PCP || pcp > MT753X_MAX_PCP)
++		return -EINVAL;
++
++	gsw->vlan_entries[vlan].pcp = pcp;
++	return 0;
++}
++
++static int mt753x_get_pcp(struct switch_dev *dev,
++			  const struct switch_attr *attr,
++			  struct switch_val *val)
++{
++	struct gsw_mt753x *gsw = container_of(dev, struct gsw_mt753x, swdev);
++	int vlan;
++
++	vlan = val->port_vlan;
++	val->value.i = gsw->vlan_entries[vlan].pcp;
++	return 0;
++}
++
+ static int mt753x_get_port_link(struct switch_dev *dev, int port,
+ 				struct switch_port_link *link)
+ {
+@@ -509,8 +543,12 @@ static int mt753x_apply_config(struct sw
+ 
+ 			if (etags & BIT(j))
+ 				tag_ports |= 1u << j;
+-			else
++			else {
+ 				untag_ports |= 1u << j;
++
++				/* update vlan vid to port */
++				gsw->port_entries[j].pvid = gsw->vlan_entries[i].vid;
++			}
+ 		}
+ 	}
+ 
+@@ -544,14 +582,18 @@ static int mt753x_apply_config(struct sw
+ 	/* Port Default PVID */
+ 	for (i = 0; i < MT753X_NUM_PORTS; i++) {
+ 		int vlan = gsw->port_entries[i].pvid;
++		u16 pcp = 0;
+ 		u16 pvid = 0;
+ 		u32 val;
+ 
+-		if (vlan < MT753X_NUM_VLANS && gsw->vlan_entries[vlan].member)
++		if (vlan < MT753X_NUM_VLANS && gsw->vlan_entries[vlan].member) {
+ 			pvid = gsw->vlan_entries[vlan].vid;
++			pcp = gsw->vlan_entries[vlan].pcp;
++		}
+ 
+ 		val = mt753x_reg_read(gsw, PPBV1(i));
+-		val &= ~GRP_PORT_VID_M;
++		val &= ~(GRP_PORT_VID_M | (GRP_PORT_PRI_M << GRP_PORT_PRI_S(0)));
++		val |= pcp << GRP_PORT_PRI_S(0);
+ 		val |= pvid;
+ 		mt753x_reg_write(gsw, PPBV1(i), val);
+ 	}
+@@ -627,6 +669,14 @@ static const struct switch_attr mt753x_v
+ 		.get = mt753x_get_vid,
+ 		.max = 4094,
+ 	},
++	{
++		.type = SWITCH_TYPE_INT,
++		.name = "pcp",
++		.description = "Priority Code Point (0-7)",
++		.set = mt753x_set_pcp,
++		.get = mt753x_get_pcp,
++		.max = 7,
++	},
+ };
+ 
+ static const struct switch_dev_ops mt753x_swdev_ops = {
+Index: linux-4.4.177/drivers/net/phy/mtk/mt753x/mt753x.h
+===================================================================
+--- a/drivers/net/phy/mtk/mt753x/mt753x.h
++++ b/drivers/net/phy/mtk/mt753x/mt753x.h
+@@ -28,6 +28,8 @@
+ 
+ #define MT753X_MAX_VID		4095
+ #define MT753X_MIN_VID		0
++#define MT753X_MAX_PCP		7
++#define MT753X_MIN_PCP		0
+ 
+ #define MT753X_DFL_SMI_ADDR	0x1f
+ #define MT753X_SMI_ADDR_MASK	0x1f
+@@ -47,6 +49,7 @@ struct mt753x_vlan_entry {
+ 	u16	vid;
+ 	u8	member;
+ 	u8	etags;
++	u16	pcp;
+ };
+ 
+ struct mt753x_port_cfg {

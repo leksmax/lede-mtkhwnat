@@ -1,0 +1,41 @@
+--- a/drivers/mtd/mtdpart.c
++++ b/drivers/mtd/mtdpart.c
+@@ -52,6 +52,7 @@ struct mtd_part {
+ };
+ 
+ static void mtd_partition_split(struct mtd_info *master, struct mtd_part *part);
++static char split_firmware_name[16];
+ 
+ /*
+  * Given a pointer to the MTD object in the mtd_part structure, we can retrieve
+@@ -791,6 +792,17 @@ mtd_pad_erasesize(struct mtd_info *mtd,
+ #define SPLIT_FIRMWARE_NAME	"unused"
+ #endif
+ 
++/*
++ * Set up bootbank.  Called via do_early_param() in init/main.c
++ * for each "console=" parameter in the boot command line.
++ */
++static int __init bootbank_setup(char *str)
++{
++	strlcpy(split_firmware_name, str, sizeof(split_firmware_name));
++	return 1;
++}
++__setup("sfw_name=", bootbank_setup);
++
+ static void split_firmware(struct mtd_info *master, struct mtd_part *part)
+ {
+ 	run_parsers_by_type(part, MTD_PARSER_TYPE_FIRMWARE);
+@@ -814,7 +826,11 @@ static void mtd_partition_split(struct m
+ 		rootfs_found = 1;
+ 	}
+ 
+-	if (!strcmp(part->mtd.name, SPLIT_FIRMWARE_NAME) &&
++	if (!split_firmware_name[0])
++		strlcpy(split_firmware_name, SPLIT_FIRMWARE_NAME,
++			sizeof(split_firmware_name));
++
++	if (!strcmp(part->mtd.name, split_firmware_name) &&
+ 	    config_enabled(CONFIG_MTD_SPLIT_FIRMWARE))
+ 		split_firmware(master, part);
+ 

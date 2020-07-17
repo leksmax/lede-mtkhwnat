@@ -1,0 +1,20 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=20
+
+start() {
+	if [ -f /usr/bin/ip ]; then
+		service_start /usr/bin/ip monitor neigh | /etc/scripts/arp_mon_handler.lua > /dev/null &
+	elif [ -f /usr/sbin/ip ]; then
+		service_start /usr/sbin/ip monitor neigh | /etc/scripts/arp_mon_handler.lua > /dev/null &
+	fi	
+}
+
+stop() {
+	if [ -f /usr/bin/ip ]; then
+		service_stop /usr/bin/ip
+	elif [ -f /usr/sbin/ip ]; then
+		service_stop /usr/sbin/ip
+	fi	
+}

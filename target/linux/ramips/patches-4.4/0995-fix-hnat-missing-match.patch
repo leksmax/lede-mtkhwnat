@@ -1,0 +1,24 @@
+diff -urN a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c	2020-04-13 14:28:45.000000000 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c	2020-07-08 21:53:35.136246353 +0800
+@@ -1718,7 +1718,7 @@
+ 	dump_register(CAH_RDATA),
+ };
+ 
+-int __init hnat_init_debugfs(struct mtk_hnat *h)
++int hnat_init_debugfs(struct mtk_hnat *h)
+ {
+ 	int ret = 0;
+ 	struct dentry *root;
+diff -urN a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h	2020-04-13 14:28:45.000000000 +0800
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat.h	2020-07-08 21:53:42.456291080 +0800
+@@ -751,7 +751,7 @@
+ extern struct mtk_hnat *hnat_priv;
+ 
+ void hnat_deinit_debugfs(struct mtk_hnat *h);
+-int __init hnat_init_debugfs(struct mtk_hnat *h);
++int hnat_init_debugfs(struct mtk_hnat *h);
+ int hnat_register_nf_hooks(void);
+ void hnat_unregister_nf_hooks(void);
+ extern int dbg_cpu_reason;

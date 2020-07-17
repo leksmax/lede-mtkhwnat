@@ -1,0 +1,74 @@
+From 67a0341bc83f16333ff6336ef628c1f18c487a00 Mon Sep 17 00:00:00 2001
+From: tina_chen <ting-yun_chen@alphanetworks.com>
+Date: Tue, 2 Apr 2019 11:54:04 +0800
+Subject: [PATCH 5/5] feat: [IPv6 CERouter] patch from Eric WDL
+
+Dates: 2019/03/28 17:19
+
+- patch for WAN RFC2460
+
+alphawrt : basic/alphawrt-mtk-4010
+alphawrt/alpha/kernels/linux-4.4.124 : kernels/linux-4.4.124-mtk-4010.git
+
+Change-Id: I0f1a0420e1597ae7c6cab8d47d188756f2de5712
+---
+ net/ipv6/addrconf.c | 18 ++++++++++++++----
+ net/ipv6/ndisc.c    |  3 ++-
+ 2 files changed, 16 insertions(+), 5 deletions(-)
+
+diff --git a/net/ipv6/addrconf.c b/net/ipv6/addrconf.c
+index 5e036a4..7cb761e 100644
+--- a/net/ipv6/addrconf.c
++++ b/net/ipv6/addrconf.c
+@@ -3893,11 +3893,20 @@ static void addrconf_dad_run(struct inet6_dev *idev, bool restart)
+ 	// In addrconf_dad_work the rtnl_loca() was blocked cause this delay. (mt_wifi.ko occupied lock)
+ 	// And this function was called when linklocal addr generated(NETDEV_UP/NETDEV_CHANGE).
+ 	// Delay sending linklocal addr DAD NS to bypass this issue.
+-	if (idev && idev->dev 
+-		&& 0 == strcmp(idev->dev->name, "eth1")) {
+-		delay = 5000; // ms
++	if (idev && idev->dev) {
++		// CE LOGO test lan_rfc4862, The NS of eth0 DAD sometimes send out success, 
++		// but after 5s TN send NS.  At this time, the eth0 was added in br-lan and br-lan was not ready.
++		// eth0 can't response the NS.
++		if (0 == strcmp(idev->dev->name, "eth0")) {
++			return;
++		}
++		// delay WAN & LAN DAD sending.
++		if (0 == strcmp(idev->dev->name, "eth1")
++				|| 0 == strcmp(idev->dev->name, "br-lan")) {
++			delay = 6000; // ms
++		}
+ 	}
+-    
++
+ 	read_lock_bh(&idev->lock);
+ 	list_for_each_entry(ifp, &idev->addr_list, if_list) {
+ 		spin_lock(&ifp->lock);
+@@ -3911,6 +3920,7 @@ static void addrconf_dad_run(struct inet6_dev *idev, bool restart)
+ 	read_unlock_bh(&idev->lock);
+ }
+ 
++
+ #ifdef CONFIG_PROC_FS
+ struct if6_iter_state {
+ 	struct seq_net_private p;
+diff --git a/net/ipv6/ndisc.c b/net/ipv6/ndisc.c
+index 0e8a5ea..da6ca5a 100644
+--- a/net/ipv6/ndisc.c
++++ b/net/ipv6/ndisc.c
+@@ -566,9 +566,10 @@ void ndisc_send_ns(struct net_device *dev, const struct in6_addr *solicit,
+ 
+ 	if (!saddr) {
+ 		if (ipv6_get_lladdr(dev, &addr_buf,
+-				   (IFA_F_TENTATIVE|IFA_F_OPTIMISTIC)))
++				   (IFA_F_TENTATIVE|IFA_F_OPTIMISTIC))) {
+ 			printk("ndisc_send_ns: get lladdr failed, %s: addr=%pI6c\n", dev->name, solicit);
+ 			return;
++		}
+ 		saddr = &addr_buf;
+ 	}
+ 
+-- 
+2.7.4
+

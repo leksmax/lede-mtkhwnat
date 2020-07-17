@@ -1,0 +1,65 @@
+Index: linux-4.4.177/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+===================================================================
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -293,6 +293,38 @@ static int mtk_phy_connect_node(struct m
+ 	return 0;
+ }
+ 
++static void mtk_phy_print_status(struct net_device *dev)
++{
++	phy_print_status(dev->phydev);
++}
++
++static int mtk_phy_link_connect_node(struct mtk_eth *eth, struct mtk_mac *mac,
++				                                     struct device_node *phy_node)
++{
++	struct phy_device *phydev;
++	int phy_mode;
++
++	phy_mode = of_get_phy_mode(phy_node);
++	if (phy_mode < 0) {
++		dev_err(eth->dev, "incorrect phy-mode %d\n", phy_mode);
++		return -EINVAL;
++	}
++
++	phydev = of_phy_connect(eth->netdev[mac->id], phy_node,
++				mtk_phy_print_status, 0, phy_mode);
++	if (!phydev) {
++		dev_err(eth->dev, "could not connect to PHY\n");
++		return -ENODEV;
++	}
++
++	dev_info(eth->dev,
++		 "connected mac %d to PHY at %s [uid=%08x, driver=%s]\n",
++		 mac->id, dev_name(&phydev->dev), phydev->phy_id,
++		 phydev->drv->name);
++
++	return 0;
++}
++
+ static int mtk_phy_connect(struct net_device *dev)
+ {
+ 	struct mtk_mac *mac = netdev_priv(dev);
+@@ -1877,6 +1909,7 @@ static int mtk_open(struct net_device *d
+ {
+ 	struct mtk_mac *mac = netdev_priv(dev);
+ 	struct mtk_eth *eth = mac->hw;
++	struct device_node *np;
+ 
+ 	/* we run 2 netdevs on the same dma ring so we only bring it up once */
+ 	if (!atomic_read(&eth->dma_refcnt)) {
+@@ -1892,6 +1925,13 @@ static int mtk_open(struct net_device *d
+ 	}
+ 	atomic_inc(&eth->dma_refcnt);
+ 
++	np = of_parse_phandle(mac->of_node, "phy-link-handle", 0);
++	if (np) {
++		if (dev->phydev)
++			phy_disconnect(dev->phydev);
++		mtk_phy_link_connect_node(eth, mac, np);
++	}
++
+ 	phy_start(dev->phydev);
+ 	netif_start_queue(dev);
+ 

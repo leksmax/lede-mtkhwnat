@@ -1,0 +1,64 @@
+From 29be3be8ec50e62435dfdc7fe6e86e1a79c0339e Mon Sep 17 00:00:00 2001
+From: tina_chen <ting-yun_chen@alphanetworks.com>
+Date: Fri, 15 Mar 2019 10:41:10 +0800
+Subject: [PATCH 2/5] feat: [IPv6 CERouter] patch from Eric WDL
+
+Dates: 2019/03/12 10:56
+
+Patch for CE Router :
+
+- WAN-RFC3633, if case 4 sometimes passes;sometimes fails, it is because the CE Router tool terminated
+the case earlier than the router sends out the RA.
+
+- WAN-RFC2460-RFC4443-RFC4861, lack of case 31
+
+- Include fix of case 66 of WAN-RFC3315
+
+alphawrt : basic/alphawrt-mtk-4010
+alphawrt/alpha/kernels/linux-4.4.124 : kernels/linux-4.4.124-mtk-4010.git
+alphawrt/alpha/pkg.gpl/common : pkg.gpl/common
+
+Change-Id: I8267759c93841e03b98b2853132899757330d022
+---
+ net/ipv6/icmp.c | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/net/ipv6/icmp.c b/net/ipv6/icmp.c
+index 3ae2fbe..0291548 100644
+--- a/net/ipv6/icmp.c
++++ b/net/ipv6/icmp.c
+@@ -604,6 +604,31 @@ static void icmpv6_echo_reply(struct sk_buff *skb)
+ 	err = ip6_dst_lookup(net, sk, &dst, &fl6);
+ 	if (err)
+ 		goto out;
++
++#if 1 // mark@wdl, CE LOGO Test case 13-20 of wan_rfc2460_rfc4861_rfc4443
++    if (dst != NULL)
++    {
++        struct neighbour *n;
++        struct rt6_info *rt;
++        rt = (struct rt6_info *)dst;
++        rcu_read_lock_bh();
++        n = __ipv6_neigh_lookup_noref(rt->dst.dev,
++                          rt6_nexthop(rt, &fl6.daddr));
++        rcu_read_unlock_bh();
++
++        // ndisc_recv_na -> neigh_update
++        // n->nud_state=02 n->flags=00 dev=eth1
++        if (n && n->dev && 0 == strcmp(n->dev->name, "eth1")
++                && n->nud_state == NUD_REACHABLE && n->flags != NTF_ROUTER)
++        {
++            printk("icmpv6_echo_reply: nud_state=%02x flags=%02x dev=%s\n", 
++                        n->nud_state, n->flags, n->dev->name);
++
++            goto out;
++        }
++    }
++#endif
++    
+ 	dst = xfrm_lookup(net, dst, flowi6_to_flowi(&fl6), sk, 0);
+ 	if (IS_ERR(dst))
+ 		goto out;
+-- 
+2.7.4
+

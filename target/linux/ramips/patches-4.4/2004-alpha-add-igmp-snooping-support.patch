@@ -1,0 +1,390 @@
+Index: linux-4.4.177/drivers/net/phy/mtk/mt753x/mt753x.h
+===================================================================
+--- a/drivers/net/phy/mtk/mt753x/mt753x.h
++++ b/drivers/net/phy/mtk/mt753x/mt753x.h
+@@ -101,6 +101,10 @@ struct gsw_mt753x {
+ 	struct mt753x_port_entry port_entries[MT753X_NUM_PORTS];
+ 
+ 	int global_vlan_enable;
++	int snoop;
++	int acl_table_idx;
++	int acl_mask_idx;
++	int acl_rule_idx;
+ 	u32 cpu_port;
+ #endif
+ 
+@@ -135,6 +139,7 @@ void mt753x_lock_gsw(void);
+ 
+ u32 mt753x_reg_read(struct gsw_mt753x *gsw, u32 reg);
+ void mt753x_reg_write(struct gsw_mt753x *gsw, u32 reg, u32 val);
++void mt753x_reg_update(struct gsw_mt753x *gsw, u32 reg, u32 val, u32 mask);
+ 
+ int mt753x_mii_read(struct gsw_mt753x *gsw, int phy, int reg);
+ void mt753x_mii_write(struct gsw_mt753x *gsw, int phy, int reg, u16 val);
+Index: linux-4.4.177/drivers/net/phy/mtk/mt753x/mt753x_mdio.c
+===================================================================
+--- a/drivers/net/phy/mtk/mt753x/mt753x_mdio.c
++++ b/drivers/net/phy/mtk/mt753x/mt753x_mdio.c
+@@ -72,6 +72,16 @@ void mt753x_reg_write(struct gsw_mt753x
+ 	mutex_unlock(&gsw->host_bus->mdio_lock);
+ }
+ 
++void mt753x_reg_update(struct gsw_mt753x *gsw, u32 reg, u32 val, u32 mask)
++{
++	u32 tmp;
++
++	tmp = mt753x_reg_read(gsw, reg);
++	tmp &= ~mask;
++	tmp |= (val & mask);
++	mt753x_reg_write(gsw, reg, tmp);
++}
++
+ /* Indirect MDIO clause 22/45 access */
+ static int mt753x_mii_rw(struct gsw_mt753x *gsw, int phy, int reg, u16 data,
+ 			 u32 cmd, u32 st)
+Index: linux-4.4.177/drivers/net/phy/mtk/mt753x/mt753x_regs.h
+===================================================================
+--- a/drivers/net/phy/mtk/mt753x/mt753x_regs.h
++++ b/drivers/net/phy/mtk/mt753x/mt753x_regs.h
+@@ -19,6 +19,10 @@
+ #define ETAG_CTRL_SWAP			1
+ #define ETAG_CTRL_STACK			3
+ 
++#define MFC				0x10
++#define ISC				0x18
++#define IMC				0x1c
++
+ #define VTCR				0x90
+ #define VAWD1				0x94
+ #define VAWD2				0x98
+@@ -70,6 +74,45 @@
+ #define PORT_ETAG_S(p)			((p) * 2)
+ #define PORT_ETAG_M			0x03
+ 
++/* VAWD ACL */
++#define ACL_MANG			BIT(29)
++#define INT_EN				BIT(28)
++#define ACL_CNT_EN			BIT(27)
++#define CNT_IDX_S			24
++#define CNT_IDX_M			(0x7 << CNT_IDX_S)
++#define VLAN_PORT_EN			BIT(23)
++#define DS_SWAP				BIT(22)
++#define SA_SWAP				BIT(21)
++#define PPP_RM				BIT(20)
++#define LKY_VLAN			BIT(19)
++#define ACL_EG_TAG_S			16
++#define ACL_EG_TAG_M			(0x7 << ACL_EG_TAG_S)
++#define PORT_S				8
++#define PORT_M				(0xff << PORT_S)
++#define PORT_EN				BIT(7)
++#define PRI_USER_S			4
++#define PRI_USER_M			(0x7 << PRI_USER_S)
++#define MIR_EN				BIT(3)
++#define PORT_FW_S			0
++#define PORT_FW_M			(0x7 << PORT_FW_S)
++
++/* VAWD2 ACL */
++#define ACL_EN_S			19
++#define OFST_TP_S			16
++#define OFST_TP_M			(0x7 << OFST_TP_S)
++#define SP_S				8
++#define SP_M				(0xff << SP_S)
++#define WORD_OFST_S			1
++#define WORD_OFST_M			(0x7f << WORD_OFST_S)
++
++#define OFSET_MAC			0x0
++#define OFSET_L2			0x1
++#define OFSET_IP_HEADER			0x2
++#define OFSET_IP_DATA			0x3
++#define OFSET_TCP_HEADER		0x4
++#define OFSET_TCP_DATA			0x5
++#define OFSET_IPv6_HEADER		0x6
++
+ #define PORT_CTRL_BASE			0x2000
+ #define PORT_CTRL_PORT_OFFSET		0x100
+ #define PORT_CTRL_REG(p, r)		(PORT_CTRL_BASE + \
+Index: linux-4.4.177/drivers/net/phy/mtk/mt753x/mt753x_swconfig.c
+===================================================================
+--- a/drivers/net/phy/mtk/mt753x/mt753x_swconfig.c
++++ b/drivers/net/phy/mtk/mt753x/mt753x_swconfig.c
+@@ -174,6 +174,28 @@ static int mt753x_set_vlan_enable(struct
+ 	return 0;
+ }
+ 
++static int mt753x_get_snoop_enable(struct switch_dev *dev,
++				  const struct switch_attr *attr,
++				  struct switch_val *val)
++{
++	struct gsw_mt753x *gsw = container_of(dev, struct gsw_mt753x, swdev);
++
++	val->value.i = gsw->snoop;
++
++	return 0;
++}
++
++static int mt753x_set_snoop_enable(struct switch_dev *dev,
++				  const struct switch_attr *attr,
++				  struct switch_val *val)
++{
++	struct gsw_mt753x *gsw = container_of(dev, struct gsw_mt753x, swdev);
++
++	gsw->snoop = val->value.i != 0;
++
++	return 0;
++}
++
+ static int mt753x_get_port_pvid(struct switch_dev *dev, int port, int *val)
+ {
+ 	struct gsw_mt753x *gsw = container_of(dev, struct gsw_mt753x, swdev);
+@@ -213,6 +235,10 @@ static void mt753x_vlan_ctrl(struct gsw_
+ 	for (i = 0; i < 300; i++) {
+ 		u32 val = mt753x_reg_read(gsw, VTCR);
+ 
++		if (val & IDX_INVLD) {
++			dev_info(gsw->dev, "vtcr index not valid\n");
++			break;
++		}
+ 		if ((val & VTCR_BUSY) == 0)
+ 			break;
+ 
+@@ -481,6 +507,212 @@ static void mt753x_port_isolation(struct
+ 				 (VA_TRANSPARENT_PORT << VLAN_ATTR_S));
+ }
+ 
++static int table_busy(struct gsw_mt753x *gsw)
++{
++	int i;
++	for (i = 0; i < 300; i++) {
++		u32 val = mt753x_reg_read(gsw, VTCR);
++
++		if ((val & VTCR_BUSY) == 0)
++			break;
++
++		usleep_range(1000, 1100);
++	}
++
++	if (i == 300) {
++		dev_info(gsw->dev, "vtcr timeout\n");
++		return 1;
++	}
++
++	return 0;
++}
++
++static int acl_table_add(struct gsw_mt753x *gsw, u32 vawd1, u32 vawd2,
++			 u32 *table_mask)
++{
++	if (table_busy(gsw))
++		return 1;
++
++	mt753x_reg_write(gsw, VAWD1, vawd1);
++	mt753x_reg_write(gsw, VAWD2, vawd2);
++	mt753x_vlan_ctrl(gsw, VTCR_WRITE_ACL_ENTRY, gsw->acl_table_idx);
++
++	if (gsw->acl_table_idx < 32)
++		table_mask[0] |= BIT(gsw->acl_table_idx);
++	else
++		table_mask[1] |= BIT(gsw->acl_table_idx - 32);
++	gsw->acl_table_idx++;
++
++	return 0;
++}
++
++static int acl_mask_add(struct gsw_mt753x *gsw, u32 vawd1, u32 vawd2)
++{
++	if (table_busy(gsw))
++		return 1;
++
++	mt753x_reg_write(gsw, VAWD1, vawd1);
++	mt753x_reg_write(gsw, VAWD2, vawd2);
++	mt753x_vlan_ctrl(gsw, VTCR_WRITE_ACL_MASK_ENTRY, gsw->acl_mask_idx);
++
++	gsw->acl_mask_idx++;
++
++	return 0;
++}
++
++static int acl_rule_add(struct gsw_mt753x *gsw, u32 vawd1, u32 vawd2)
++{
++	if (table_busy(gsw))
++		return 1;
++
++	mt753x_reg_write(gsw, VAWD1, vawd1);
++	mt753x_reg_write(gsw, VAWD2, vawd2);
++	mt753x_vlan_ctrl(gsw, VTCR_WRITE_ACL_RULE_ENTRY, gsw->acl_rule_idx);
++
++	gsw->acl_rule_idx++;
++
++	return 0;
++}
++
++static void mt753x_snoop_enable(struct gsw_mt753x *gsw)
++{
++	int i;
++	u32 table_mask[2];
++	u32 vawd1, vawd2;
++	u32 member = gsw->vlan_entries[1].member;
++
++	/* set router port to port4 (WAN) */
++	mt753x_reg_update(gsw, ISC, 0x10, 0xff);
++	/* disable multicast forward */
++	mt753x_reg_update(gsw, MFC, ~member << 16, (0x7f << 16));
++	/* set high priority and management frame */
++	mt753x_reg_write(gsw, IMC, 0x08100810);
++
++	if (member) {
++		for (i = 0; i < MT753X_NUM_PORTS; i++) {
++			if (!(member & BIT(i))) {
++				mt753x_reg_write(gsw, PIC(i), 0x8000);
++				continue;
++			}
++
++			/* enable igmp/mld message refresh member table */
++			mt753x_reg_write(gsw, PIC(i), 0xb3ff);
++			/* enable ACL */
++			mt753x_reg_update(gsw, PCR(i), (0x1 << 10), (0x1 << 10));
++		}
++	}
++
++	gsw->acl_table_idx = gsw->acl_mask_idx = gsw->acl_rule_idx = 0;
++	vawd1 = ((member << PORT_S) & PORT_M) | PORT_EN;
++
++	/* ACL allow IGMP */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_IP_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x8 & WORD_OFST_M);
++	acl_table_add(gsw, 0x00ff0002, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow IPv6 next header is Hop-by-Hop -> ICMPv6
++	 * for multicast query/report
++	 */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_IPv6_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x6 & WORD_OFST_M);
++	acl_table_add(gsw, 0xff000000, vawd2, table_mask);
++	vawd2 = BIT(ACL_EN_S) | (OFSET_IPv6_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x28 & WORD_OFST_M);
++	acl_table_add(gsw, 0xff003a00, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow IPv6 next header ICMPv6 */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_IPv6_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x6 & WORD_OFST_M);
++	acl_table_add(gsw, 0xff003a00, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow SSDP dport 1900 */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_TCP_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x2 & WORD_OFST_M);
++	acl_table_add(gsw, 0xffff076c, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow 802.3 Ethernet. we should checke length < 0x600
++	 * but now only check length <= 0xff
++	 */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_MAC << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0xc & WORD_OFST_M);
++	acl_table_add(gsw, 0xff000000, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow LLDP */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_MAC << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0xc & WORD_OFST_M);
++	acl_table_add(gsw, 0xffff88cc, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow DHCPv6, dport 546 */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_TCP_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x2 & WORD_OFST_M);
++	acl_table_add(gsw, 0xffff0222, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow DHCPv6, dport 547 */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_TCP_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x2 & WORD_OFST_M);
++	acl_table_add(gsw, 0xffff0223, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow MDNS, dport 5353 */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_TCP_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x2 & WORD_OFST_M);
++	acl_table_add(gsw, 0xffff14e9, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++
++	/* ACL allow LLMNR, dport 5355 */
++	table_mask[0] = table_mask[1] = 0;
++	vawd2 = BIT(ACL_EN_S) | (OFSET_TCP_HEADER << OFST_TP_S) |
++		((member << SP_S) & SP_M) | (0x2 & WORD_OFST_M);
++	acl_table_add(gsw, 0xffff14eb, vawd2, table_mask);
++
++	acl_mask_add(gsw, table_mask[0], table_mask[1]);
++	acl_rule_add(gsw, vawd1, 0);
++}
++
++static void mt753x_snoop_disable(struct gsw_mt753x *gsw)
++{
++	int i;
++
++	mt753x_reg_write(gsw, ISC, 0x27d7f);
++	mt753x_reg_update(gsw, MFC, 0xff << 16, (0xff << 16));
++	for (i = 0; i < MT753X_NUM_PORTS; i++)
++		mt753x_reg_write(gsw, PIC(i), 0x8000);
++}
++
+ static void mt753x_write_vlan_entry(struct gsw_mt753x *gsw, int vlan, u16 vid,
+ 				    u8 ports, u8 etags)
+ {
+@@ -526,6 +758,12 @@ static int mt753x_apply_config(struct sw
+ 		mt753x_reg_write(gsw, PCR(i),
+ 				 PORT_MATRIX_M | SECURITY_MODE);
+ 
++	/* igmp/mld snooping */
++	if (gsw->snoop)
++		mt753x_snoop_enable(gsw);
++	else
++		mt753x_snoop_disable(gsw);
++
+ 	/* check if a port is used in tag/untag vlan egress mode */
+ 	tag_ports = 0;
+ 	untag_ports = 0;
+@@ -647,6 +885,14 @@ static const struct switch_attr mt753x_g
+ 		.id = MT753X_ATTR_ENABLE_VLAN,
+ 		.get = mt753x_get_vlan_enable,
+ 		.set = mt753x_set_vlan_enable,
++	},
++	{
++		.type = SWITCH_TYPE_INT,
++		.name = "igmp_snoop",
++		.description = "IGMP Snooping (1:enabled)",
++		.max = 1,
++		.get = mt753x_get_snoop_enable,
++		.set = mt753x_set_snoop_enable,
+ 	}
+ };
+ 

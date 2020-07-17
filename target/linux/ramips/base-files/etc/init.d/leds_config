@@ -1,0 +1,23 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=1
+
+SCRIPT="leds_watchdog.sh"
+
+start() {
+	if [ -f /etc/scripts/$SCRIPT ]; then
+		service_start /etc/scripts/$SCRIPT > /dev/null &
+	fi
+}
+
+stop() {
+	if [ -f /etc/scripts/$SCRIPT ]; then
+		killall $SCRIPT
+	fi
+}
+
+restart() {
+	stop
+	start
+}

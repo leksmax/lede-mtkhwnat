@@ -1,0 +1,37 @@
+diff -urN a/mt_wifi/chips/mt7615.c b/mt_wifi/chips/mt7615.c
+--- a/mt_wifi/chips/mt7615.c	2019-05-03 00:47:19.000000000 +0800
++++ b/mt_wifi/chips/mt7615.c	2020-07-08 21:06:29.902981615 +0800
+@@ -1417,7 +1417,6 @@
+ 	struct _RTMP_ADAPTER *pAd,
+ 	EEPROM_ANTENNA_STRUC *pAntenna)
+ {
+-	USHORT value;
+ 	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
+ 	UINT8 max_nss = cap->max_nss;
+ 	POS_COOKIE pObj;
+@@ -1441,6 +1440,7 @@
+ 			 __func__, pAntenna->field.TxPath, pAntenna->field.RxPath));
+ 
+ #ifdef DBDC_MODE
++	USHORT value;
+ 	if (max_nss == 4) {
+ 		RT28xx_EEPROM_READ16(pAd, EEPROM_DBDC_ANTENNA_CFG_OFFSET, value);
+ 		value &= 0xFF;
+diff -urN a/mt_wifi/embedded/common/cmm_profile.c b/mt_wifi/embedded/common/cmm_profile.c
+--- a/mt_wifi/embedded/common/cmm_profile.c	2019-05-03 00:47:19.000000000 +0800
++++ b/mt_wifi/embedded/common/cmm_profile.c	2020-07-08 20:57:57.483847506 +0800
+@@ -4098,14 +4098,6 @@
+ 					pAd->CommonCfg.cPowerUpCckOfdm[BAND1][6]));
+ 			}
+ #endif /* DBDC_MODE */
+-			printk("[PowerUpCckOfdm] BAND1: (%d)-(%d)-(%d)-(%d)-(%d)-(%d)-(%d)\n",
+-				pAd->CommonCfg.cPowerUpCckOfdm[BAND1][0],
+-				pAd->CommonCfg.cPowerUpCckOfdm[BAND1][1],
+-				pAd->CommonCfg.cPowerUpCckOfdm[BAND1][2],
+-				pAd->CommonCfg.cPowerUpCckOfdm[BAND1][3],
+-				pAd->CommonCfg.cPowerUpCckOfdm[BAND1][4],
+-				pAd->CommonCfg.cPowerUpCckOfdm[BAND1][5],
+-				pAd->CommonCfg.cPowerUpCckOfdm[BAND1][6]);
+ 		}
+ 
+ 		/* Power Boost (HT20) */
