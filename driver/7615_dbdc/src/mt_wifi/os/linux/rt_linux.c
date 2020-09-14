@@ -451,6 +451,25 @@ PNDIS_PACKET ClonePacket(BOOLEAN moniflag, PNET_DEV ndev, PNDIS_PACKET pkt, UCHA
 	return pClonedPkt;
 }
 
+#ifdef MAP_R2
+PNDIS_PACKET CopyPacket(
+	IN PNET_DEV if_dev,
+	IN PNDIS_PACKET pkt
+)
+{
+	struct sk_buff *skb = NULL;
+	PNDIS_PACKET pkt_copy = NULL;
+
+	skb = skb_copy(RTPKT_TO_OSPKT(pkt), GFP_ATOMIC);
+
+	if (skb) {
+		skb->dev = if_dev;
+		pkt_copy = OSPKT_TO_RTPKT(skb);
+	}
+
+	return pkt_copy;
+}
+#endif
 
 PNDIS_PACKET DuplicatePacket(PNET_DEV pNetDev, PNDIS_PACKET pPacket)
 {
@@ -2364,6 +2383,46 @@ VOID RtmpOsTaskPidInit(RTMP_OS_PID *pPid)
 	*pPid = THREAD_PID_INIT_VALUE;
 }
 
+UINT32 RtmpOsCsumAdd(UINT32 csum, UINT32 addend)
+{
+	UINT32 res = csum;
+	res += addend;
+	return res + (res < addend);
+}
+
+VOID RtmpOsSkbPullRcsum(struct sk_buff *skb, unsigned int len)
+{
+	if (len > skb->len)
+		return;
+
+	skb_pull(skb, len);
+	if (skb->ip_summed == CHECKSUM_COMPLETE)
+		skb->csum = RtmpOsCsumAdd(skb->csum, ~csum_partial(skb->data, len, 0));
+	else if (skb->ip_summed == CHECKSUM_PARTIAL &&
+		 (skb->csum_start - (skb->data - skb->head)) < 0)
+		skb->ip_summed = CHECKSUM_NONE;
+}
+
+VOID RtmpOsSkbResetMacHeader(struct sk_buff *skb)
+{
+	skb_reset_mac_header(skb);
+}
+
+VOID RtmpOsSkbResetNetworkHeader(struct sk_buff *skb)
+{
+	skb_reset_network_header(skb);
+}
+
+VOID RtmpOsSkbResetTransportHeader(struct sk_buff *skb)
+{
+	skb_reset_transport_header(skb);
+}
+
+VOID RtmpOsSkbResetMacLen(struct sk_buff *skb)
+{
+	skb_reset_mac_len(skb);
+}
+
 /*
  * ========================================================================
  * Routine Description:
@@ -2444,16 +2503,7 @@ VOID RtmpOsPktNatMagicTag(IN PNDIS_PACKET pNetPkt)
 {
 	struct sk_buff *pRxPkt = RTPKT_TO_OSPKT(pNetPkt);
 
-	if (IS_SPACE_AVAILABLE_HEAD(pRxPkt)) {
-				FOE_ALG_HEAD(pRxPkt) = 0;
-				FOE_MAGIC_TAG_HEAD(pRxPkt) = FOE_MAGIC_WLAN;
-				FOE_TAG_PROTECT_HEAD(pRxPkt) = TAG_PROTECT;
-			}
-			if (IS_SPACE_AVAILABLE_TAIL(pRxPkt)) {
-				FOE_ALG_TAIL(pRxPkt) = 0;
-				FOE_MAGIC_TAG_TAIL(pRxPkt) = FOE_MAGIC_WLAN;
-				FOE_TAG_PROTECT_TAIL(pRxPkt) = TAG_PROTECT;
-			}
+	FOE_MAGIC_TAG(pRxPkt) = FOE_MAGIC_WLAN;
 }
 #endif /*CONFIG_FAST_NAT_SUPPORT*/
 
@@ -4659,7 +4709,12 @@ VOID RTMP_OS_Release_Timer(NDIS_MINIPORT_TIMER *pTimerOrg)
 
 NDIS_STATUS RtmpOSTaskKill(RTMP_OS_TASK *pTask)
 {
-	return __RtmpOSTaskKill(pTask);
+	NDIS_STATUS Status;
+	if (pTask != NULL) {
+		Status = __RtmpOSTaskKill(pTask);
+		return Status;
+	}
+	return NDIS_STATUS_FAILURE;
 }
 
 

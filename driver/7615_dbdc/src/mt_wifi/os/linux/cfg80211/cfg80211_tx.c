@@ -210,7 +210,7 @@ VOID ProbeResponseHandler(
 			MakeOutgoingFrame(pOutBuffer+FrameLen,		&TmpLen,
 							  1,						&ErpIe,
 							  1,						&ErpIeLen,
-							  1,						&pAd->ApCfg.ErpIeContent,
+							  1,						&mbss->ErpIeContent,
 							  1,						&ExtRateIe,
 							  1,						&rate->ExtRateLen,
 							  rate->ExtRateLen, 		rate->ExtRate,
@@ -342,7 +342,7 @@ VOID ProbeResponseHandler(
 				FrameLen += QBSS_LoadElementAppend_HSTEST(pAd, pOutBuffer + FrameLen, apidx);
 			else if (pAd->ApCfg.MBSSID[apidx].HotSpotCtrl.QLoadTestEnable == 0)
 #endif
-				FrameLen += QBSS_LoadElementAppend(pAd, pOutBuffer + FrameLen, pQloadCtrl);
+				FrameLen += QBSS_LoadElementAppend(pAd, pOutBuffer + FrameLen, pQloadCtrl, apidx);
 		}
 #endif /* AP_QLOAD_SUPPORT */
 
@@ -495,21 +495,19 @@ VOID ProbeResponseHandler(
 
 #ifdef DOT11K_RRM_SUPPORT
 
-		if (IS_RRM_ENABLE(wdev))
+		if (IS_RRM_ENABLE(wdev)) {
 			RRM_InsertRRMEnCapIE(pAd, pOutBuffer + FrameLen, &FrameLen, apidx);
-
-		InsertChannelRepIE(pAd, pOutBuffer + FrameLen, &FrameLen,
+			InsertChannelRepIE(pAd, pOutBuffer + FrameLen, &FrameLen,
 						   (RTMP_STRING *)pAd->CommonCfg.CountryCode,
 						   get_regulatory_class(pAd, mbss->wdev.channel, mbss->wdev.PhyMode, &mbss->wdev),
-						   NULL, PhyMode);
+						   NULL, PhyMode, wdev->func_idx);
 #ifndef APPLE_11K_IOT
-		/* Insert BSS AC Access Delay IE. */
-		RRM_InsertBssACDelayIE(pAd, pOutBuffer+FrameLen, &FrameLen);
-
-		/* Insert BSS Available Access Capacity IE. */
-		RRM_InsertBssAvailableACIE(pAd, pOutBuffer+FrameLen, &FrameLen);
+			/* Insert BSS AC Access Delay IE. */
+			RRM_InsertBssACDelayIE(pAd, pOutBuffer+FrameLen, &FrameLen);
+			/* Insert BSS Available Access Capacity IE. */
+			RRM_InsertBssAvailableACIE(pAd, pOutBuffer+FrameLen, &FrameLen);
 #endif /* !APPLE_11K_IOT */
-
+		}
 #endif /* DOT11K_RRM_SUPPORT */
 
 #ifndef VENDOR_FEATURE7_SUPPORT
@@ -1029,7 +1027,9 @@ SendAuth:
 				NdisMoveMemory(&pEntry->MdIeInfo, &auth_info.FtInfo.MdIeInfo, sizeof(FT_MDIE_INFO));
 
 				pEntry->AuthState = AS_AUTH_OPEN;
-				pEntry->Sst = SST_AUTH;
+				/*According to specific, if it already in SST_ASSOC, it can not go back */
+				if (pEntry->Sst != SST_ASSOC)
+					pEntry->Sst = SST_AUTH;
 #ifdef RADIUS_MAC_AUTH_SUPPORT
 				if (pEntry->wdev->radius_mac_auth_enable)
 					pEntry->bAllowTraffic = TRUE;
@@ -1059,7 +1059,9 @@ SendAuth:
 		if (pEntry) {
 			if (mgmt->u.auth.status_code == MLME_SUCCESS) {
 				pEntry->AuthState = AS_AUTH_OPEN;
-				pEntry->Sst = SST_AUTH;
+				/*According to specific, if it already in SST_ASSOC, it can not go back */
+				if (pEntry->Sst != SST_ASSOC)
+					pEntry->Sst = SST_AUTH;
 #ifdef RADIUS_MAC_AUTH_SUPPORT
 				if (pEntry->wdev->radius_mac_auth_enable)
 					pEntry->bAllowTraffic = TRUE;
@@ -1088,7 +1090,9 @@ SendAuth:
 #endif /* DOT11W_PMF_SUPPORT */
 			{
 				pEntry->AuthState = AS_AUTH_OPEN;
-				pEntry->Sst = SST_AUTH; /* what if it already in SST_ASSOC ??????? */
+				/*According to specific, if it already in SST_ASSOC, it can not go back */
+				if (pEntry->Sst != SST_ASSOC)
+					pEntry->Sst = SST_AUTH;
 			}
 			MTWF_LOG(DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("%s: pEntry created: auth state:%d, Sst:%d", __func__, pEntry->AuthState, pEntry->Sst));
 			/* APPeerAuthSimpleRspGenAndSend(pAd, pRcvHdr, auth_info.auth_alg, auth_info.auth_seq + 1, MLME_SUCCESS); */

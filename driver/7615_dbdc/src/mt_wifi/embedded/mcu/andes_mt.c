@@ -55,8 +55,16 @@ INT32 AndesMTPciKickOutCmdMsg(PRTMP_ADAPTER pAd, struct cmd_msg *msg)
 
 	FreeNum = GET_CTRLRING_FREENO(pAd);
 
+	if (FreeNum < 10) {
+		if (IS_MT7615(pAd))
+			hif->dma_done_handle[TX_CMD](pAd, HIF_TX_IDX2);
+		else if (IS_MT7622(pAd))
+			hif->dma_done_handle[TX_CMD](pAd, HIF_TX_IDX15);
+		FreeNum = GET_CTRLRING_FREENO(pAd);
+	}
+
 	if (FreeNum == 0) {
-		MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+		MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 				 ("%s FreeNum == 0 (TxCpuIdx = %d, TxDmaIdx = %d, TxSwFreeIdx = %d)\n",
 				  __func__, ring->TxCpuIdx,
 				  ring->TxDmaIdx, ring->TxSwFreeIdx));
@@ -68,6 +76,8 @@ INT32 AndesMTPciKickOutCmdMsg(PRTMP_ADAPTER pAd, struct cmd_msg *msg)
 
 	if (pSrcBufVA == NULL) {
 		RTMP_SPIN_UNLOCK_IRQRESTORE(lock, &flags);
+		MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("%s pSrcBufVA is NULL!!\n", __func__));
 		return NDIS_STATUS_FAILURE;
 	}
 
@@ -145,8 +155,13 @@ INT32 AndesMTPciKickOutCmdMsgFwDlRing(PRTMP_ADAPTER pAd, struct cmd_msg *msg)
 	pRing = (RTMP_RING *)(&(hif->FwDwloRing));
 	FreeNum = GET_FWDWLORING_FREENO(pRing);
 
+	if (FreeNum < 10) {
+		hif->dma_done_handle[TX_FW_DL](pAd, HIF_TX_IDX3);
+		FreeNum = GET_FWDWLORING_FREENO(pRing);
+	}
+
 	if (FreeNum == 0) {
-		MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+		MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 				 ("%s FreeNum == 0 (TxCpuIdx = %d, TxDmaIdx = %d, TxSwFreeIdx = %d)\n",
 				  __func__, pRing->TxCpuIdx, pRing->TxDmaIdx, pRing->TxSwFreeIdx));
 		return NDIS_STATUS_FAILURE;
@@ -157,6 +172,7 @@ INT32 AndesMTPciKickOutCmdMsgFwDlRing(PRTMP_ADAPTER pAd, struct cmd_msg *msg)
 
 	if (pSrcBufVA == NULL) {
 		RTMP_SPIN_UNLOCK_IRQRESTORE(&pRing->RingLock, &flags);
+		MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s pSrcBufVA is NULL!!\n", __func__));
 		return NDIS_STATUS_FAILURE;
 	}
 
@@ -1822,7 +1838,8 @@ static VOID ExtEventCswNotifyHandler(
 
 	if ((HcIsRfSupport(pAd, RFIC_5GHZ))
 		&& (pAd->CommonCfg.bIEEE80211H == 1)
-		&& (pDot11h->RDMode == RD_SWITCHING_MODE)) {
+		&& ((pDot11h->RDMode == RD_SWITCHING_MODE)
+		|| (pDot11h->RDMode == RD_SILENCE_MODE))) {
 #ifdef CONFIG_AP_SUPPORT
 		pDot11h->CSCount = pDot11h->CSPeriod;
 		ChannelSwitchingCountDownProc(pAd, wdev);
@@ -2024,6 +2041,64 @@ static VOID ExtEventGetWtblTxCounter(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Leng
 		}
 	}
 #endif
+}
+#endif
+#ifdef CONFIG_MAP_SUPPORT
+static UINT8 findNextCmdWcidIdx(RTMP_ADAPTER *pAd, UINT_8 EventWcidStart)
+{
+	UINT8 NextEventWcidStart, TotalValidWcid = 0;
+
+	TotalValidWcid = pAd->ApCfg.EntryClientCount;
+	if (TotalValidWcid < (EventWcidStart + CFG_STA_REC_NUM_PER_EVENT)) {
+		NextEventWcidStart = 1;
+	} else {
+		NextEventWcidStart = (EventWcidStart + CFG_STA_REC_NUM_PER_EVENT);
+	}
+
+	return NextEventWcidStart;
+}
+static VOID ExtEventGetStaTxRate(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
+{
+	P_EXT_EVENT_TX_RATE_RESULT_T prEventExtCmdResult = (P_EXT_EVENT_TX_RATE_RESULT_T)Data;
+	HTTRANSMIT_SETTING LastTxRate;
+	PMAC_TABLE_ENTRY pEntry = NULL;
+	UINT32 Idx;
+#ifdef MAP_R2
+	UINT32 k;
+#endif
+	pAd->get_all_sta_rate_wcid_idx = findNextCmdWcidIdx(pAd, prEventExtCmdResult->rAllTxRateResult[0].ucWlanIdx);
+	for (Idx = 0; Idx < prEventExtCmdResult->ucStaNum; Idx++) {
+		pEntry = &pAd->MacTab.Content[prEventExtCmdResult->rAllTxRateResult[Idx].ucWlanIdx];
+		if (pEntry && pEntry->wdev &&  IS_ENTRY_CLIENT(pEntry) && pEntry->Sst == SST_ASSOC) {
+			LastTxRate.field.MODE = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE;
+			LastTxRate.field.BW = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.BW;
+			LastTxRate.field.ldpc = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.ldpc ? 1 : 0;
+			LastTxRate.field.ShortGI =
+				prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.ShortGI ? 1 : 0;
+			LastTxRate.field.STBC = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.STBC;
+			if (LastTxRate.field.MODE == MODE_VHT) {
+				LastTxRate.field.MCS =
+					(((prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.VhtNss - 1)
+					& 0x3) << 4) +
+					prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MCS;
+			} else if (LastTxRate.field.MODE == MODE_OFDM) {
+				LastTxRate.field.MCS =
+					getLegacyOFDMMCSIndex(prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MCS)
+					& 0x0000003F;
+			} else {
+				LastTxRate.field.MCS = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MCS;
+			}
+			pEntry->LastTxRate = (UINT32)LastTxRate.word;
+#ifdef MAP_R2
+			for (k = 0; k < 4; k++) {
+				pEntry->TxRxTime[k][0] =
+					prEventExtCmdResult->rAllTxRateResult[Idx].txRxAdmInfo.arTxAdmInfo[k].u4ACTxTime;
+				pEntry->TxRxTime[k][1] =
+					prEventExtCmdResult->rAllTxRateResult[Idx].txRxAdmInfo.arTxAdmInfo[k].u4ACTxBytes;
+			}
+#endif
+		}
+	}
 }
 #endif
 
@@ -2605,6 +2680,11 @@ static VOID EventExtEventHandler(RTMP_ADAPTER *pAd, UINT8 ExtEID, UINT8 *Data,
 		ExtEventGetStaTxStat(pAd, Data, Length);
 		break;
 #endif
+#ifdef CONFIG_MAP_SUPPORT
+	case EXT_EVENT_ID_GET_TX_RATE:
+		ExtEventGetStaTxRate(pAd, Data, Length);
+		break;
+#endif
 
 #ifdef IGMP_TVM_SUPPORT
 	case EXT_EVENT_ID_IGMP_MULTICAST_RESP:
@@ -2901,7 +2981,6 @@ static VOID HandleSeqNonZeroNormalEvents(RTMP_ADAPTER *pAd,
 		if (msg->seq == peerSeq) {
 			MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 					 ("%s (seq=%d)\n", __func__, msg->seq));
-			ReleaseMCUCtrlAckQueueSpinLock(&ctl, &flags);
 			msg->receive_time_in_jiffies = jiffies;
 			MTWF_LOG(DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 					 ("%s: CMD_ID(0x%x 0x%x),total spent %ld ms\n", __func__,
@@ -2916,7 +2995,6 @@ static VOID HandleSeqNonZeroNormalEvents(RTMP_ADAPTER *pAd,
 					 ("%s: need_wait=%d\n", __func__,
 					  IS_CMD_MSG_NEED_SYNC_WITH_FW_FLAG_SET(msg)));
 			CompleteWaitCmdMsgOrFreeCmdMsg(msg);
-			GetMCUCtrlAckQueueSpinLock(&ctl, &flags);
 			break;
 		}
 	}

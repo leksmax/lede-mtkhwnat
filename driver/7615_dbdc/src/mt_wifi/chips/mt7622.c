@@ -1666,6 +1666,9 @@ static VOID mt7622_chipCap_init(void)
 	MT7622_ChipCap.tx_delay_support = TRUE;
 
 	MT7622_ChipCap.asic_caps |= fASIC_CAP_ADV_SECURITY;
+#ifdef OCE_SUPPORT
+	MT7622_ChipCap.FdFrameFwOffloadEnabled = TRUE;
+#endif /* OCE_SUPPORT */
 }
 
 static VOID mt7622_chipOp_init(void)

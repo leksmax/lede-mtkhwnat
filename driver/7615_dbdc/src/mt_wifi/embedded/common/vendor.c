@@ -629,7 +629,6 @@ void map_parse_vendor_ie(struct _RTMP_ADAPTER *pAd, struct _vendor_ie_cap *vendo
 	rate = (short *)ptr;
 	vendor_ie->map_info.uplink_rate = *rate;
 	ptr += 2;
-	vendor_ie->map_info.uplink_rate = be2cpu16(vendor_ie->map_info.uplink_rate);
 	NdisCopyMemory(vendor_ie->map_info.uplink_bssid, ptr, MAC_ADDR_LEN);
 	ptr += MAC_ADDR_LEN;
 	NdisCopyMemory(vendor_ie->map_info.bssid_5g, ptr, MAC_ADDR_LEN);

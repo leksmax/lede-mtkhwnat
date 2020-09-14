@@ -64,7 +64,7 @@ MODULE_PARM_DESC(mode, "rt_wifi: wireless operation mode");
 #if !defined(CONFIG_PROPRIETARY_DRIVER) || defined(CONFIG_DBG_OOM)
 MODULE_LICENSE("GPL");
 #else
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("Proprietary");
 #endif
 
 #ifdef OS_ABL_SUPPORT

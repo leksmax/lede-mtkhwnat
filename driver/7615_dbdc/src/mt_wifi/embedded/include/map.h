@@ -3,23 +3,34 @@
 #define __MAP_H__
 
 #include "rtmp_type.h"
-
+#include "rtmp.h"
 #define ASSOC_REQ_LEN       154
 #define BLOCK_LIST_NUM      128
 #define VENDOR_SPECIFIC_LEN 128
 #define MAX_BH_PROFILE_CNT    4
+#ifdef MAP_R2
+#define ASSOC_REQ_LEN_R2    512
+#define INVALID_VLAN_ID		4096
+#endif
 
 
 /* For rssi steering*/
 #define RCPI_TOLLENACE       8 /* 2dB */
 
 #define IS_MAP_ENABLE(pAd) \
-		(pAd->bMAPEnable == TRUE)
+		((pAd->MAPMode != MAP_DISABLED) && (pAd->MAPMode != MAP_BS_2_0))
 
 #define IS_MAP_TURNKEY_ENABLE(pAd) \
-		((pAd->bMAPTurnKeyEnable == TRUE) && (pAd->bMAPEnable == TRUE))
+		((pAd->MAPMode == MAP_TURNKEY))
 
 #define VEND_IE_TYPE 221
+
+#ifdef MAP_R2
+#define IS_VALID_VID(vid)\
+		((vid) && (vid != INVALID_VLAN_ID))
+#define IS_MAP_R2_ENABLE(pAd) \
+		(pAd->bMapR2Enable == TRUE)
+#endif
 
 typedef enum {
 	BELOW_THRESHOLD = 0,
@@ -37,38 +48,41 @@ struct GNU_PACKED map_policy_setting {
 	unsigned char cu_thr;
 	unsigned char rcpi_thr;
 };
-#define MAX_PROFILE_CNT 4
 
-struct scan_SSID {
-	char ssid[32 + 1];
-	unsigned char SsidLen;
-};
-struct vendor_map_element {
-	u8 eid;
-	u8 length;
-	char oui[3]; /* 0x50 6F 9A */
-	char mtk_ie_element[4];
-	char type;
-	char subtype;
-	char root_distance;
-	char controller_connectivity;
-	short uplink_rate;
-	char uplink_bssid[ETH_ALEN];
-	char _5g_bssid[ETH_ALEN];
-	char _2g_bssid[ETH_ALEN];
-};
-
-
-struct GNU_PACKED scan_BH_ssids
+#ifdef DFS_CAC_R2
+struct GNU_PACKED cac_opcap
 {
-	unsigned long scan_cookie;
-	unsigned char scan_channel_count;
-	unsigned char scan_channel_list[32];
-	unsigned char profile_cnt;
-	struct scan_SSID scan_SSID_val[MAX_PROFILE_CNT];
+	unsigned char op_class;
+	unsigned char ch_num;
+	unsigned char ch_list[16];
+	USHORT cac_time[16];
+	unsigned int last_cac_time[16];
+	USHORT non_occupancy_remain[16];
 };
+
+struct GNU_PACKED cac_capability_lib
+{
+	unsigned char country_code[2];
+	unsigned char rdd_region;
+	unsigned char op_class_num;
+	struct cac_opcap opcap[16];
+	unsigned char active_cac;
+	unsigned char ch_num;
+	unsigned int remain_time;
+};
+#endif
+
+#define MAP_DISABLED		0
+#define MAP_TURNKEY			1
+#define MAP_BS_2_0			2
+#define MAP_API_MODE		3
+#define MAP_CERT_MODE		4
+
+#ifdef MAP_R2
+#define MAX_VLAN_NUM		16
+#endif
+
 typedef struct _MAP_CONFIG {
-	BOOLEAN bMAPEnable;
 	/*Support Unassociated STA link metric report on current operating Bss*/
 	BOOLEAN bUnAssocStaLinkMetricRptOpBss;
 	/*Support Unassociated STA link metric report on currently non operating Bss */
@@ -80,6 +94,13 @@ typedef struct _MAP_CONFIG {
 	UCHAR vendor_ie_len;
 	struct scan_BH_ssids scan_bh_ssids;
 	BOOLEAN FireProbe_on_DFS;
+#ifdef MAP_R2
+	UINT16 primary_vid;
+	UCHAR primary_pcp;
+	UCHAR vid_num;
+	UINT16 vids[MAX_VLAN_NUM];
+	UINT16 fh_vid;
+#endif
 } MAP_CONFIG, *PMAP_CONFIG;
 
 /* spec v171027 */
@@ -142,6 +163,10 @@ INT MAP_InsertMapWscAttr(
 BOOLEAN map_check_cap_ie(
 	IN PEID_STRUCT   eid,
 	OUT  unsigned char *cap
+#ifdef MAP_R2
+	, OUT UCHAR *profile,
+	OUT UINT16 *vid
+#endif
 );
 
 UCHAR getNonOpChnNum(
@@ -207,5 +232,10 @@ BOOLEAN map_a4_deinit(
 #endif /*A4_CONN*/
 BOOLEAN MapNotRequestedChannel(struct wifi_dev *wdev, unsigned char channel);
 int map_make_vend_ie(IN PRTMP_ADAPTER pAd, IN UCHAR ApIdx);
+#ifdef MAP_R2
+BOOLEAN map_ts_tx_process(RTMP_ADAPTER *pAd, struct wifi_dev *wdev,
+					PNDIS_PACKET pkt, struct _MAC_TABLE_ENTRY *peer_entry);
+BOOLEAN map_ts_rx_process(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk, UCHAR wdev_idx);
+#endif
 #endif
 

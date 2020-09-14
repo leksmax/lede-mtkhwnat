@@ -1504,7 +1504,7 @@ IOCTL_ATE_ERROR:
 		if ((HtPhyMode.field.MODE >= MODE_VHT) && (wdev != NULL)) {
 			BW = wlan_operate_get_vht_bw(wdev);
 
-			if (BW == 0) /* HT20/40 */
+			if (BW == 0 && wlan_operate_get_ht_bw(wdev)) /* VHT40 */
 				BW = 1;
 			else if (BW == 1) /* VHT80 */
 				BW = 2;
@@ -3905,7 +3905,78 @@ INT SetSKUCtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 	return TRUE;
 #endif /* SINGLE_SKU_V2 */
 }
+#ifdef ACK_CTS_TIMEOUT_SUPPORT
+INT Set_CCK_ACK_Timeout_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT32 mac_val = 0, count = 0;
 
+	if (arg == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: No parameters!!\n", __FUNCTION__));
+		return FALSE;
+	}
+	count = os_str_tol(arg, 0, 10);
+	count &= CCK_OFDM_MAX_ACK_TIMEOUT;
+
+	if ((count < 0) || (count > CCK_OFDM_MAX_ACK_TIMEOUT)) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("CCK ACK Time Range [0xFFFF:0]!!\n"));
+		return FALSE;
+	}
+
+	/* Read CCK ACK Time CR and set */
+	MAC_IO_READ32(pAd, TMAC_CDTR, &mac_val);
+	mac_val &= ~CCK_OFDM_MAX_ACK_TIMEOUT;
+	mac_val |= (count & CCK_OFDM_MAX_ACK_TIMEOUT);
+	MAC_IO_WRITE32(pAd, TMAC_CDTR, mac_val);
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("CCK-ACK Timeout set = %d!!\n", count));
+	return TRUE;
+}
+INT Set_OFDM_ACK_Timeout_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT32 mac_val = 0, count = 0;
+
+	if (arg == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: No parameters!!\n", __FUNCTION__));
+		return FALSE;
+	}
+	count = os_str_tol(arg, 0, 10);
+	count &= CCK_OFDM_MAX_ACK_TIMEOUT;
+
+	if ((count < 0) || (count > CCK_OFDM_MAX_ACK_TIMEOUT)) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("OFDM ACK Timeout Range [0xFFFF:0]!!\n"));
+		return FALSE;
+	}
+
+	/* Read OFDM ACK Time CR and set */
+	MAC_IO_READ32(pAd, TMAC_ODTR, &mac_val);
+	mac_val &= ~CCK_OFDM_MAX_ACK_TIMEOUT;
+	mac_val |= (count & CCK_OFDM_MAX_ACK_TIMEOUT);
+	MAC_IO_WRITE32(pAd, TMAC_ODTR, mac_val);
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("OFDM-ACK Timeout set = %d!!\n", count));
+	return TRUE;
+}
+INT Show_CCK_ACK_Timeout_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT32 mac_val = 0;
+
+	/* Read OFDM ACK Time CR*/
+	MAC_IO_READ32(pAd, TMAC_CDTR, &mac_val);
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("CCK CTS/ACK Timeout = %d!!\n", (mac_val & CCK_OFDM_MAX_ACK_TIMEOUT)));
+	return TRUE;
+}
+INT Show_OFDM_ACK_Timeout_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT32 mac_val = 0;
+
+	/* Read OFDM ACK time CR */
+	MAC_IO_READ32(pAd, TMAC_ODTR, &mac_val);
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("OFDM CTS/ACK Timeout = %d!!\n", (mac_val & CCK_OFDM_MAX_ACK_TIMEOUT)));
+	return TRUE;
+}
+#endif
 INT SetPercentageCtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
 	UINT8	i;
@@ -4164,7 +4235,29 @@ INT SetBfBackoffCtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 	return TRUE;
 #endif /* SINGLE_SKU_V2 */
 }
+#ifdef NF_SUPPORT
+INT Show_noise_floor_info(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT8 BandIdx = 0;
+	struct wifi_dev *wdev;
 
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+
+	/* obtain Band index */
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+	BandIdx = HcGetBandByWdev(wdev);
+#endif /* CONFIG_AP_SUPPORT */
+
+	MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("NF = %d\n",
+					pAd->Avg_NF[BandIdx]));
+	return TRUE;
+}
+#endif /* NF_SUPPORT*/
 INT SetThermoCompCtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
 	UINT8   i;
@@ -4290,6 +4383,134 @@ INT SetCCKTxStream(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 	return TxCCKStreamCtrl(pAd, pAd->CommonCfg.CCKTxStream[ucBandIdx], ucBandIdx);
 }
 
+#ifdef ANTENNA_CONTROL_SUPPORT
+INT Antenna_Control_Init(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
+{
+	UINT8 BandIdx = 0;
+	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
+
+	BandIdx = HcGetBandByWdev(wdev);
+
+	if (pAd->TxStream[BandIdx] && pAd->RxStream[BandIdx]) {
+		wlan_config_set_tx_stream(wdev, min(pAd->TxStream[BandIdx], cap->max_nss));
+		wlan_config_set_rx_stream(wdev, min(pAd->RxStream[BandIdx], cap->max_nss));
+		wlan_operate_set_tx_stream(wdev, min(pAd->TxStream[BandIdx], cap->max_nss));
+		wlan_operate_set_rx_stream(wdev, min(pAd->RxStream[BandIdx], cap->max_nss));
+
+		SetCommonHtVht(pAd, wdev);
+	}
+	return TRUE;
+}
+
+INT Show_Antenna_Control_info(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT8 BandIdx = 0;
+	struct wifi_dev *wdev;
+
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+
+	/* obtain Band index */
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+	BandIdx = HcGetBandByWdev(wdev);
+#endif /* CONFIG_AP_SUPPORT */
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("ShowAntennaControl_Info::(TxStream=%d,RxStream=%d)\n", (pAd->TxStream[BandIdx]) ? pAd->TxStream[BandIdx] : wlan_operate_get_tx_stream(wdev), (pAd->RxStream[BandIdx]) ? pAd->RxStream[BandIdx] : wlan_operate_get_rx_stream(wdev)));
+
+	return TRUE;
+}
+INT Set_Antenna_Control_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+
+{
+	UINT8 BandIdx = 0, Txstream = 0, Rxstream = 0;
+	struct wifi_dev *wdev;
+	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
+
+#ifdef CONFIG_AP_SUPPORT
+	BSS_STRUCT *pMbss = NULL;
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+
+	UCHAR apidx = pObj->ioctl_if;
+	/* obtain Band index */
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+	pMbss = &pAd->ApCfg.MBSSID[wdev->func_idx];
+	BandIdx = HcGetBandByWdev(wdev);
+#endif /* CONFIG_AP_SUPPORT */
+
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: Incoorect BSS!!\n", __FUNCTION__));
+		return FALSE;
+	}
+	if (arg == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: No parameters!!\n", __FUNCTION__));
+		return FALSE;
+	}
+	if (0 == simple_strtol(&arg[0], 0, 10)) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("%s: Set default Antenna number!!\n", __func__));
+		Txstream = Rxstream = cap->max_nss;
+		if (pAd->CommonCfg.dbdc_mode)
+			Txstream = Rxstream = (cap->max_nss/2);
+		goto set_default;
+	}
+	if (strlen(arg) != 4) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("%s: Please use input format like XTXR (X = 1,2,3,4)!!\n", __func__));
+		return FALSE;
+	}
+	if (((arg[1] == 'T') || (arg[1] == 't')) && ((arg[3] == 'R') || (arg[3] == 'r'))) {
+		Txstream = simple_strtol(&arg[0], 0, 10);
+		Rxstream = simple_strtol(&arg[2], 0, 10);
+
+		if (Txstream != Rxstream) {
+			MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("%s : Tx & Rx Antenna number different, configure same!!\n", __func__));
+			return FALSE;
+		}
+
+		if (Txstream > cap->max_nss) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("%s:Wrong Configuration Ant num > MAX Support == %d!!\n", __func__, cap->max_nss));
+			return FALSE;
+		}
+#ifdef DBDC_MODE
+		if (pAd->CommonCfg.dbdc_mode && (Txstream > (cap->max_nss/2))) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("%s:Wrong Configuration Ant num > MAX Support == %d!!\n", __func__, (cap->max_nss/2)));
+			return FALSE;
+		}
+#endif
+set_default:
+		pAd->TxStream[BandIdx]			  = Txstream;
+		pAd->RxStream[BandIdx]			  = Rxstream;
+		pAd->bAntennaSetAPEnable[BandIdx]  = 1;
+		wlan_config_set_tx_stream(wdev, min(Txstream, cap->max_nss));
+		wlan_config_set_rx_stream(wdev, min(Rxstream, cap->max_nss));
+		wlan_operate_set_tx_stream(wdev, min(Txstream, cap->max_nss));
+		wlan_operate_set_rx_stream(wdev, min(Rxstream, cap->max_nss));
+
+		SetCommonHtVht(pAd, wdev);
+	} else {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("Wrong Params,Format:: xTxR (x=1 or 2 or 3 or 4!!\n"));
+		return FALSE;
+	}
+
+	if (pMbss != NULL) {
+		APStop(pAd, pMbss, AP_BSS_OPER_BY_RF);
+		APStartUp(pAd, pMbss, AP_BSS_OPER_BY_RF);
+		return TRUE;
+	} else
+		return FALSE;
+}
+#endif /* ANTENNA_CONTROL_SUPPORT */
+
 
 INT SetRfTxAnt(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
@@ -4405,7 +4626,166 @@ error:
 
 	return FALSE;
 }
+#ifdef AMPDU_CONF_SUPPORT
+#define AMPDU_MAX_RETRY_COUNT   0x1F
+#define MAX_MPDU_COUNT_FOR_AGG  64
+INT Show_AMPDU_retry_Count(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT8 BandIdx = 0;
+	struct wifi_dev *wdev;
 
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+
+	/* obtain Band index */
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+	BandIdx = HcGetBandByWdev(wdev);
+#endif /* CONFIG_AP_SUPPORT */
+
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: Incorrect BSS!!\n", __FUNCTION__));
+		return FALSE;
+	}
+	if (!(wdev->bRetryEnable))
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Band = %d Default AMPDU retry count = 15\n", BandIdx));
+	else
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Band = %d AMPDU retry count = %d!!\n", BandIdx, wdev->bAMPDURetrynum));
+
+	return TRUE;
+}
+
+INT Set_AMPDU_Retry_Count(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT8 BandIdx = 0, count = 0;
+	struct wifi_dev *wdev;
+
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+
+	/* obtain Band index */
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+	BandIdx = HcGetBandByWdev(wdev);
+#endif /* CONFIG_AP_SUPPORT */
+
+	count = os_str_tol(arg, 0, 10);
+	if ((count < 0)  || (count > AMPDU_MAX_RETRY_COUNT)) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Retry range is: [0:1F]!!\n"));
+		return FALSE;
+	}
+
+	wdev->bRetryEnable  = TRUE;;
+	wdev->bAMPDURetrynum = count;
+
+	Set_CR4_retry_counter(pAd, apidx, count);
+
+	if (count == 0)
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Set to cannot Tx!!\n"));
+	else if (count == AMPDU_MAX_RETRY_COUNT)
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Set to unlimited Tx Retry!!\n"));
+	else
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Set Number Tx retry count = %d!!\n", count));
+
+	return TRUE;
+}
+
+INT Show_AMPDU_MPDU_Count(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT8 BandIdx = 0;
+	UINT32 mac_val = 0;
+	struct wifi_dev *wdev;
+
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+
+	/* obtain Band index */
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+	BandIdx = HcGetBandByWdev(wdev);
+#endif /* CONFIG_AP_SUPPORT */
+
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: Incoorect BSS!!\n", __FUNCTION__));
+		return FALSE;
+	}
+
+	if ((BandIdx == DBDC_BAND1) || (WMODE_EQUAL(wdev->PhyMode, (WMODE_G | WMODE_GN)) || WMODE_EQUAL(wdev->PhyMode, WMODE_G)))
+		MAC_IO_READ32(pAd, AGG_AALCR, &mac_val);
+	else
+		MAC_IO_READ32(pAd, AGG_AALCR1, &mac_val);
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Number of MPDUs in AMPDU set = %d!!\n", (mac_val) ? (mac_val & 0x3f) : MAX_MPDU_COUNT_FOR_AGG));
+	return TRUE;
+}
+INT Set_AMPDU_MPDU_Count(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT8 BandIdx = 0, count = 0;
+	UINT32 mac_val;
+	struct wifi_dev *wdev;
+
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+
+	/* obtain Band index */
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+	BandIdx = HcGetBandByWdev(wdev);
+#endif /* CONFIG_AP_SUPPORT */
+
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: Incoorect BSS!!\n", __FUNCTION__));
+		return FALSE;
+	}
+	if (arg == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: No parameters!!\n", __FUNCTION__));
+		return FALSE;
+	}
+
+	count = os_str_tol(arg, 0, 10);
+	if (count > MAX_MPDU_COUNT_FOR_AGG) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("%s: Max MPDU in AMPDU support = 64!!\n", __FUNCTION__));
+		return FALSE;
+	}
+	if ((BandIdx == DBDC_BAND1) || (WMODE_EQUAL(wdev->PhyMode, (WMODE_G | WMODE_GN)) || WMODE_EQUAL(wdev->PhyMode, WMODE_G))) {
+		MAC_IO_READ32(pAd, AGG_AALCR, &mac_val);
+		mac_val &= ~AC0_AGG_LIMIT_MASK;
+		mac_val |= AC0_AGG_LIMIT(count);
+		mac_val &= ~AC1_AGG_LIMIT_MASK;
+		mac_val |= AC1_AGG_LIMIT(count);
+		mac_val &= ~AC2_AGG_LIMIT_MASK;
+		mac_val |= AC2_AGG_LIMIT(count);
+		mac_val &= ~AC3_AGG_LIMIT_MASK;
+		mac_val |= AC3_AGG_LIMIT(count);
+		MAC_IO_WRITE32(pAd, AGG_AALCR, mac_val);
+	} else {
+		MAC_IO_READ32(pAd, AGG_AALCR1, &mac_val);
+		mac_val &= ~AC10_AGG_LIMIT_MASK;
+		mac_val |= AC10_AGG_LIMIT(count);
+		mac_val &= ~AC11_AGG_LIMIT_MASK;
+		mac_val |= AC11_AGG_LIMIT(count);
+		mac_val &= ~AC12_AGG_LIMIT_MASK;
+		mac_val |= AC12_AGG_LIMIT(count);
+		mac_val &= ~AC13_AGG_LIMIT_MASK;
+		mac_val |= AC13_AGG_LIMIT(count);
+		MAC_IO_WRITE32(pAd, AGG_AALCR1, mac_val);
+	}
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Number of MPDUs in AMPDU set = %d!!\n", count));
+	return TRUE;
+}
+#endif /* AMPDU_CONF_SUPPORT*/
 INT SetTOAECtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
 	UINT8	i;
@@ -4575,6 +4955,104 @@ INT SetBFBackoffInfo(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 	return status;
 }
 
+INT show_BSSEdca_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	struct wifi_dev *wdev = NULL;
+	struct _EDCA_PARM *pBssEdca = NULL;
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+	pBssEdca = wlan_config_get_ht_edca(wdev);
+	if (pBssEdca == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("pBssEdca is NULL\n"));
+		return FALSE;
+	}
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("   BSSEdca:     AIFSN    CWmin   CWmax    TXOP(us)  ACM\n"));
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("	   AC_BE	  %2d	  %2d	  %2d	   %4d	   %d\n",
+							 pBssEdca->Aifsn[0],
+							 pBssEdca->Cwmin[0],
+							 pBssEdca->Cwmax[0],
+							 pBssEdca->Txop[0],
+							 pBssEdca->bACM[0]));
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("	   AC_BK	  %2d	  %2d	  %2d	   %4d	   %d\n",
+							 pBssEdca->Aifsn[1],
+							 pBssEdca->Cwmin[1],
+							 pBssEdca->Cwmax[1],
+							 pBssEdca->Txop[1],
+							 pBssEdca->bACM[1]));
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("	   AC_VI	  %2d	  %2d	  %2d	   %4d	   %d\n",
+							 pBssEdca->Aifsn[2],
+							 pBssEdca->Cwmin[2],
+							 pBssEdca->Cwmax[2],
+							 pBssEdca->Txop[2],
+							 pBssEdca->bACM[2]));
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("	   AC_VO	  %2d	  %2d	  %2d	   %4d	   %d\n",
+							 pBssEdca->Aifsn[3],
+							 pBssEdca->Cwmin[3],
+							 pBssEdca->Cwmax[3],
+							 pBssEdca->Txop[3],
+							 pBssEdca->bACM[3]));
+
+	return TRUE;
+}
+
+INT show_APEdca_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	struct wifi_dev *wdev = NULL;
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("   APEdca:     AIFSN     CWmin   CWmax    TXOP(us)  ACM\n"));
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("	   AC_BE	%2d	  %2d	  %2d	   %4d	     %d\n",
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Aifsn[0],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmin[0],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmax[0],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Txop[0],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].bACM[0]));
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("	   AC_BK	%2d	  %2d	  %2d	   %4d	     %d\n",
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Aifsn[1],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmin[1],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmax[1],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Txop[1],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].bACM[1]));
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("	   AC_VI	%2d	  %2d	  %2d	   %4d	     %d\n",
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Aifsn[2],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmin[2],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmax[2],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Txop[2],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].bACM[2]));
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+		("	   AC_VO	%2d	  %2d	  %2d	   %4d	     %d\n",
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Aifsn[3],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmin[3],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmax[3],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Txop[3],
+							 pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].bACM[3]));
+
+	return TRUE;
+}
+
 #ifdef WIFI_EAP_FEATURE
 INT SetEDCCAThresholdCtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
@@ -4652,6 +5130,16 @@ INT set_mgmt_txpwr_offset(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 	UINT8 txd_txpwr_offset = 0;
 	UINT8 txpwr_force_on = 0;
 	PCHAR pch = NULL;
+#ifdef CONFIG_AP_SUPPORT
+	struct wifi_dev *wdev;
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+	/* obtain Band index */
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return 0;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+#endif /* CONFIG_AP_SUPPORT */
 
 	if (arg == NULL) {
 		MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -4672,10 +5160,15 @@ INT set_mgmt_txpwr_offset(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
 			("%s: txpwr_force_on:%u\n", __func__, txpwr_force_on));
 
-	pAd->CommonCfg.mgmt_txpwr_force_on = txpwr_force_on ? TRUE : FALSE;
+#ifdef CONFIG_AP_SUPPORT
+	wdev->mgmt_txpwr_force_on = txpwr_force_on ? TRUE : FALSE;
 
-	if (txpwr_force_on == FALSE)
+	if (txpwr_force_on == FALSE) {
+		UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_DISABLE_TX);
+		UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_ENABLE_TX);
 		return TRUE;
+	}
+#endif /* CONFIG_AP_SUPPORT */
 
 	txpwr_offset = os_str_tol(arg, 0, 10);
 
@@ -4690,10 +5183,18 @@ INT set_mgmt_txpwr_offset(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
 			("%s: txd_txpwr_offset: %u\n", __func__, txd_txpwr_offset));
-	pAd->CommonCfg.txd_txpwr_offset = txd_txpwr_offset;
+#ifdef CONFIG_AP_SUPPORT
+	wdev->txd_txpwr_offset = txd_txpwr_offset;
+
+	UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_DISABLE_TX);
+	UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_ENABLE_TX);
+#endif /* CONFIG_AP_SUPPORT */
 
 	return TRUE;
 }
+
+#define WTBL_TX_PWR_OFFSET_VALUE_MIN -16
+#define WTBL_TX_PWR_OFFSET_VALUE_MAX 0
 
 INT set_data_txpwr_offset(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
@@ -4739,10 +5240,10 @@ INT set_data_txpwr_offset(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 	txpwr_offset = (INT8) os_str_tol(arg, 0, 10);
 
-	if (txpwr_offset < TX_PWR_OFFSET_VALUE_MIN
-			|| txpwr_offset > TX_PWR_OFFSET_VALUE_MAX) {
+	if (txpwr_offset < WTBL_TX_PWR_OFFSET_VALUE_MIN
+			|| txpwr_offset > WTBL_TX_PWR_OFFSET_VALUE_MAX) {
 		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-				("%s: txpwr_offset range [-16,+15]\n", __func__));
+				("%s: txpwr_offset range [-16,0]\n", __func__));
 		return FALSE;
 	}
 
@@ -6094,19 +6595,21 @@ INT set_hnat_register(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 	for (idx = 0; idx < WDEV_NUM_MAX; idx++) {
 		if (pAd->wdev_list[idx]) {
 			wdev = pAd->wdev_list[idx];
-			MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("\tWDEV %02d:, Name:%s, Wdev(list) Idx:%d\n",
-					 idx, RTMP_OS_NETDEV_GET_DEVNAME(wdev->if_dev), wdev->wdev_idx));
-			MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("\t\t Idx:%d\n", RtmpOsGetNetIfIndex(wdev->if_dev)));
+			if (wdev->if_up_down_state) {
+				MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("\tWDEV %02d:, Name:%s, Wdev(list) Idx:%d\n",
+						 idx, RTMP_OS_NETDEV_GET_DEVNAME(wdev->if_dev), wdev->wdev_idx));
+				MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("\t\t Idx:%d\n", RtmpOsGetNetIfIndex(wdev->if_dev)));
 #if defined(CONFIG_FAST_NAT_SUPPORT)
 
-			if (ppe_dev_unregister_hook != NULL &&
-				ppe_dev_register_hook != NULL) {
-				if (reg_en)
-					ppe_dev_register_hook(wdev->if_dev);
-				else
-					ppe_dev_unregister_hook(wdev->if_dev);
-			}
+				if (ppe_dev_unregister_hook != NULL &&
+					ppe_dev_register_hook != NULL) {
+					if (reg_en)
+						ppe_dev_register_hook(wdev->if_dev);
+					else
+						ppe_dev_unregister_hook(wdev->if_dev);
+				}
 #endif /*CONFIG_FAST_NAT_SUPPORT*/
+			}
 		} else
 			MTWF_LOG(DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("\n"));
 	}
@@ -7121,3 +7624,601 @@ error0:
 #endif
 
 #endif
+
+INT Set_BSSAifsn_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UCHAR i;
+	RTMP_STRING *ptr;
+	struct wifi_dev *wdev = NULL;
+	struct _EDCA_PARM *pBssEdca = NULL;
+	UCHAR value_temp[WMM_NUM_OF_AC] = {0};
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+
+	pBssEdca = wlan_config_get_ht_edca(wdev);
+	if (pBssEdca == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("pBssEdca is NULL\n"));
+		return FALSE;
+	}
+
+	for (i = 0, ptr = rstrtok(arg, ":"); ptr; ptr = rstrtok(NULL, ":"), i++) {
+		if (i < WMM_NUM_OF_AC)
+			value_temp[i] = (UCHAR)os_str_tol(ptr, 0, 10);
+	}
+
+	if (i != WMM_NUM_OF_AC) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("invalid format, parameters should be configured as xx:xx:xx:xx\n"));
+		return FALSE;
+	}
+
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		if ((value_temp[i] < 2) || (value_temp[i] > 15)) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("BSSAifsn[%d]=%d is invalid, BSSAifsn should be configured from 2 to 15\n",
+				i, value_temp[i]));
+			return FALSE;
+		}
+	}
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("start to configure BSSAifsn\n"));
+
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		pBssEdca->Aifsn[i] = value_temp[i];
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("BSSAifsn[%d]=%d\n", i, pBssEdca->Aifsn[i]));
+	}
+
+	UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_IE_CHG);
+	return TRUE;
+}
+
+INT Set_BSSCwmin_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UCHAR i;
+	RTMP_STRING *ptr;
+	struct wifi_dev *wdev = NULL;
+	struct _EDCA_PARM *pBssEdca = NULL;
+	UCHAR value_temp[WMM_NUM_OF_AC] = {0};
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+
+	pBssEdca = wlan_config_get_ht_edca(wdev);
+	if (pBssEdca == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("pBssEdca is NULL\n"));
+		return FALSE;
+	}
+
+	for (i = 0, ptr = rstrtok(arg, ":"); ptr; ptr = rstrtok(NULL, ":"), i++) {
+		if (i < WMM_NUM_OF_AC)
+			value_temp[i] = (UCHAR)os_str_tol(ptr, 0, 10);
+	}
+
+	if (i != WMM_NUM_OF_AC) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("invalid format, parameters should be configured as xx:xx:xx:xx\n"));
+		return FALSE;
+	}
+
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		if ((value_temp[i] > 15)) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("BSSCwmin[%d]=%d is invalid, BSSCwmin should not be over 15\n", i, value_temp[i]));
+			return FALSE;
+		}
+	}
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("start to configure BSSCwmin\n"));
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		pBssEdca->Cwmin[i] = value_temp[i];
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("BSSCwmin[%d]=%d\n", i, pBssEdca->Cwmin[i]));
+	}
+
+	UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_IE_CHG);
+	return TRUE;
+}
+
+INT Set_BSSCwmax_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UCHAR i;
+	RTMP_STRING *ptr;
+	struct wifi_dev *wdev = NULL;
+	struct _EDCA_PARM *pBssEdca = NULL;
+	UCHAR value_temp[WMM_NUM_OF_AC] = {0};
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+
+	pBssEdca = wlan_config_get_ht_edca(wdev);
+	if (pBssEdca == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("pBssEdca is NULL\n"));
+		return FALSE;
+	}
+
+	for (i = 0, ptr = rstrtok(arg, ":"); ptr; ptr = rstrtok(NULL, ":"), i++) {
+		if (i < WMM_NUM_OF_AC)
+			value_temp[i] = (UCHAR)os_str_tol(ptr, 0, 10);
+	}
+
+	if (i != WMM_NUM_OF_AC) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("invalid format, parameters should be configured as xx:xx:xx:xx\n"));
+		return FALSE;
+	}
+
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		if ((value_temp[i] > 15)) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("BSSCwmax[%d]=%d is invalid, BSSCwmax should not be over 15\n", i, value_temp[i]));
+			return FALSE;
+		}
+	}
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("start to configure BSSCwmax\n"));
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		pBssEdca->Cwmax[i] = value_temp[i];
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("BSSCwmax[%d]=%d\n", i, pBssEdca->Cwmax[i]));
+	}
+
+	UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_IE_CHG);
+	return TRUE;
+}
+
+INT Set_BSSTxop_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UCHAR i;
+	RTMP_STRING *ptr;
+	struct wifi_dev *wdev = NULL;
+	struct _EDCA_PARM *pBssEdca = NULL;
+	USHORT value_temp[WMM_NUM_OF_AC] = {0};
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+
+	pBssEdca = wlan_config_get_ht_edca(wdev);
+	if (pBssEdca == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("pBssEdca is NULL\n"));
+		return FALSE;
+	}
+
+	for (i = 0, ptr = rstrtok(arg, ":"); ptr; ptr = rstrtok(NULL, ":"), i++) {
+		if (i < WMM_NUM_OF_AC)
+			value_temp[i] = (USHORT)os_str_tol(ptr, 0, 10);
+	}
+
+	if (i != WMM_NUM_OF_AC) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("invalid format, parameters should be configured as xx:xx:xx:xx\n"));
+		return FALSE;
+	}
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("start to configure BSSTxop\n"));
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		pBssEdca->Txop[i] = value_temp[i];
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("BSSTxop[%d]=%d\n", i, pBssEdca->Txop[i]));
+	}
+
+	UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_IE_CHG);
+	return TRUE;
+}
+
+UCHAR ac_queue[] = {
+	TxQ_IDX_AC1, /* ACI:0 AC_BE */
+	TxQ_IDX_AC0, /* ACI:1 AC_BK */
+	TxQ_IDX_AC2, /* ACI:2 AC_VI */
+	TxQ_IDX_AC3, /* ACI:3 AC_VO */
+};
+
+INT Set_APAifsn_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UCHAR i;
+	RTMP_STRING *ptr;
+	UCHAR wmm_idx = 0;
+	UCHAR ac_index;
+	UCHAR success = TRUE;
+	struct wifi_dev *wdev = NULL;
+	EDCA_PARM *wmm_edca_param = NULL;
+	UCHAR value_temp[WMM_NUM_OF_AC] = {0};
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+	wmm_idx = HcGetWmmIdx(pAd, wdev);
+	wmm_edca_param = HcGetEdca(pAd, wdev);
+
+	for (i = 0, ptr = rstrtok(arg, ":"); ptr; ptr = rstrtok(NULL, ":"), i++) {
+		if (i < WMM_NUM_OF_AC)
+			value_temp[i] = (UCHAR)os_str_tol(ptr, 0, 10);
+	}
+
+	if (i != WMM_NUM_OF_AC) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("invalid format, parameters should be configured as xx:xx:xx:xx\n"));
+		return FALSE;
+	}
+
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		if ((value_temp[i] < 1) || (value_temp[i] > 15)) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("APAifsn[%d]=%d is invalid, APAifsn should be configured from 1 to 15\n",
+				i, value_temp[i]));
+			return FALSE;
+		}
+	}
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("start to configure APAifsn\n"));
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Aifsn[i] = value_temp[i];
+		if (wmm_edca_param)
+			wmm_edca_param->Aifsn[i] = value_temp[i];
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+			("APAifsn[%d]=%d\n", i, pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Aifsn[i]));
+		ac_index = ac_queue[i];
+		if (AsicSetWmmParam(pAd, wmm_idx, ac_index, WMM_PARAM_AIFSN, value_temp[i]) == NDIS_STATUS_FAILURE) {
+			success = FALSE;
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("fails to set APAifsn[%d]\n", i));
+		 }
+	}
+
+	return success;
+}
+
+INT Set_APCwmin_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UCHAR i;
+	RTMP_STRING *ptr;
+	UCHAR wmm_idx = 0;
+	UCHAR ac_index;
+	UCHAR success = TRUE;
+	struct wifi_dev *wdev = NULL;
+	EDCA_PARM *wmm_edca_param = NULL;
+	UCHAR value_temp[WMM_NUM_OF_AC] = {0};
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+	wmm_idx = HcGetWmmIdx(pAd, wdev);
+	wmm_edca_param = HcGetEdca(pAd, wdev);
+
+	for (i = 0, ptr = rstrtok(arg, ":"); ptr; ptr = rstrtok(NULL, ":"), i++) {
+		if (i < WMM_NUM_OF_AC)
+			value_temp[i] = (UCHAR)os_str_tol(ptr, 0, 10);
+	}
+
+	if (i != WMM_NUM_OF_AC) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("invalid format, parameters should be configured as xx:xx:xx:xx\n"));
+		return FALSE;
+	}
+
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		if ((value_temp[i] > 16)) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("APCwmin[%d]=%d is invalid, APCwmin should not be over 16\n", i, value_temp[i]));
+			return FALSE;
+		}
+	}
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("start to configure APCwmin\n"));
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmin[i] = value_temp[i];
+		if (wmm_edca_param)
+			wmm_edca_param->Cwmin[i] = value_temp[i];
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+			("APCwmin[%d]=%d\n", i, pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmin[i]));
+		ac_index = ac_queue[i];
+		if (AsicSetWmmParam(pAd, wmm_idx, ac_index, WMM_PARAM_CWMIN, value_temp[i]) == NDIS_STATUS_FAILURE) {
+			success = FALSE;
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("fails to set APCwmin[%d]\n", i));
+		 }
+	}
+
+	return success;
+}
+
+INT Set_APCwmax_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UCHAR i;
+	RTMP_STRING *ptr;
+	UCHAR wmm_idx = 0;
+	UCHAR ac_index;
+	UCHAR success = TRUE;
+	struct wifi_dev *wdev = NULL;
+	EDCA_PARM *wmm_edca_param = NULL;
+	UCHAR value_temp[WMM_NUM_OF_AC] = {0};
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+	wmm_idx = HcGetWmmIdx(pAd, wdev);
+	wmm_edca_param = HcGetEdca(pAd, wdev);
+
+	for (i = 0, ptr = rstrtok(arg, ":"); ptr; ptr = rstrtok(NULL, ":"), i++) {
+		if (i < WMM_NUM_OF_AC)
+			value_temp[i] = (UCHAR)os_str_tol(ptr, 0, 10);
+	}
+
+	if (i != WMM_NUM_OF_AC) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("invalid format, parameters should be configured as xx:xx:xx:xx\n"));
+		return FALSE;
+	}
+
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		if ((value_temp[i] > 16)) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("APCwmax[%d]=%d is invalid, APCwmax should not be over 16\n", i, value_temp[i]));
+			return FALSE;
+		}
+	}
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("start to configure APCwmax\n"));
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmax[i] = value_temp[i];
+		if (wmm_edca_param)
+			wmm_edca_param->Cwmax[i] = value_temp[i];
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+			("APCwmax[%d]=%d\n", i, pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Cwmax[i]));
+		ac_index = ac_queue[i];
+		if (AsicSetWmmParam(pAd, wmm_idx, ac_index, WMM_PARAM_CWMAX, value_temp[i]) == NDIS_STATUS_FAILURE) {
+			success = FALSE;
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("fails to set APCwmax[%d]\n", i));
+		 }
+	}
+
+	return success;
+}
+
+INT Set_APTxop_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UCHAR i;
+	RTMP_STRING *ptr;
+	UCHAR wmm_idx = 0;
+	UCHAR ac_index;
+	UCHAR success = TRUE;
+	struct wifi_dev *wdev = NULL;
+	EDCA_PARM *wmm_edca_param = NULL;
+	USHORT value_temp[WMM_NUM_OF_AC] = {0};
+#ifdef CONFIG_AP_SUPPORT
+	POS_COOKIE	pObj = (POS_COOKIE)pAd->OS_Cookie;
+
+	wdev = &pAd->ApCfg.MBSSID[pObj->ioctl_if].wdev;
+#endif
+	if (wdev == NULL) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("wdev is NULL\n"));
+		return FALSE;
+	}
+	wmm_idx = HcGetWmmIdx(pAd, wdev);
+	wmm_edca_param = HcGetEdca(pAd, wdev);
+
+	for (i = 0, ptr = rstrtok(arg, ":"); ptr; ptr = rstrtok(NULL, ":"), i++) {
+		if (i < WMM_NUM_OF_AC)
+			value_temp[i] = (USHORT)os_str_tol(ptr, 0, 10);
+	}
+
+	if (i != WMM_NUM_OF_AC) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			("invalid format, parameters should be configured as xx:xx:xx:xx\n"));
+		return FALSE;
+	}
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("start to configure APTxop\n"));
+	for (i = 0; i < WMM_NUM_OF_AC; i++) {
+		pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Txop[i] = value_temp[i];
+		if (wmm_edca_param)
+			wmm_edca_param->Txop[i] = value_temp[i];
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+			("APTxop[%d]=%d\n", i, pAd->CommonCfg.APEdcaParm[wdev->EdcaIdx].Txop[i]));
+		ac_index = ac_queue[i];
+		if (AsicSetWmmParam(pAd, wmm_idx, ac_index, WMM_PARAM_TXOP, value_temp[i]) == NDIS_STATUS_FAILURE) {
+			success = FALSE;
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("fails to set APTxop[%d]\n", i));
+		 }
+	}
+
+	return success;
+}
+
+#ifdef MGMT_TXPWR_CTRL
+/* Tx pwr offset in 0.5db unit*/
+#define TX_PWR_OFFSET_WTBL_MIN -31
+#define TX_PWR_OFFSET_WTBL_MAX 0
+
+INT set_mgmt_frame_power(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	INT16  value;
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+	RTMP_STRING *tmp;
+	CHAR   target_pwr = 0;
+	struct wifi_dev *wdev;
+
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+
+	if (!arg) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Invalid argument\n"));
+		return FALSE;
+	}
+
+	if (*arg == '.') { /* handle .5 arg value*/
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("unable to update tx pwr %s\n", arg));
+		return TRUE;
+	}
+
+	tmp = rstrtok(arg, ".");
+
+	if (!tmp) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("Please enter valid tx pwr\n"));
+		return;
+	}
+
+	value = os_str_tol(tmp, 0, 10);
+	target_pwr = value*2; /* convert to  0.5db scale*/
+	tmp = rstrtok(NULL, ".");
+
+	if (tmp) {
+		value = os_str_tol(tmp, 0, 10);
+		if (value == 5)
+			target_pwr += 1;
+		else if (target_pwr == 0) {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, ("unable to update tx pwr\n"));
+			return TRUE;
+		}
+	}
+
+	wdev->MgmtTxPwr = target_pwr;
+	update_mgmt_frame_power(pAd, wdev);
+
+	return TRUE;
+}
+
+INT update_mgmt_frame_power(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
+{
+	UINT32 FPR0, FPR3, cr_value;
+	CHAR   target_pwr, delta_pwr;
+	UINT8  OpMode, BandIdx;
+
+	BandIdx = HcGetBandByWdev(wdev);
+	OpMode = wdev->rate.MlmeTransmit.field.MODE;
+	target_pwr = wdev->MgmtTxPwr;
+
+	if (target_pwr == 0) {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF,
+			("[%s] disable mgmt pwr ctrl\n", __func__));
+		wdev->bPwrCtrlEn = FALSE;
+		wdev->TxPwrDelta = 0;
+		wtbl_update_pwr_offset(pAd, wdev);
+		goto exit;
+	}
+
+	if (BandIdx == BAND0) {
+		FPR0 = TMAC_FP0R0;
+		FPR3 = TMAC_FP0R3;
+	} else {
+		FPR0 = TMAC_FP1R0;
+		FPR3 = TMAC_FP1R3;
+	}
+
+	if (wdev->bPwrCtrlEn == FALSE) {
+		if (OpMode == MODE_CCK) {
+			RTMP_IO_READ32(pAd, FPR3, &cr_value);
+			wdev->TxBasePwr = cr_value & CCK0_FRAME_POWER0_DBM_MASK;
+		} else if (OpMode == MODE_OFDM) {
+			RTMP_IO_READ32(pAd, FPR0, &cr_value);
+			wdev->TxBasePwr = cr_value & LG_OFDM0_FRAME_POWER0_DBM_MASK;
+		} else {
+			MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				("[%s] Invalid mlme rate settings...exit!!!\n", __func__));
+			return FALSE;
+		}
+	}
+
+	delta_pwr = target_pwr - wdev->TxBasePwr;
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_TRACE, ("[%s] Target_Pwr=%d.%d Base_Pwr=%d.%d delta_Pwr=%d.%d!!!\n",
+		__func__, target_pwr/2, (target_pwr%2 ? 5:0), wdev->TxBasePwr/2,
+		(wdev->TxBasePwr%2 ? 5:0), delta_pwr/2, (delta_pwr%2 ? 5:0)));
+
+	if (delta_pwr >= TX_PWR_OFFSET_WTBL_MIN && delta_pwr <= TX_PWR_OFFSET_WTBL_MAX) {
+		/* update wtbl tx pwr offset*/
+		wdev->bPwrCtrlEn = TRUE;
+		wdev->TxPwrDelta = delta_pwr;
+		wtbl_update_pwr_offset(pAd, wdev);
+	} else {
+		MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("[%s] unable to adjust target pwr\n", __func__));
+		return TRUE;
+	}
+
+exit:
+	UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_DISABLE_TX);
+	UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_ENABLE_TX);
+
+	return TRUE;
+}
+
+INT show_mgmt_frame_power(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	INT8	Tx_Pwr, Tx_Base_pwr, BandIdx;
+	struct wifi_dev	*wdev;
+	UINT32	FPR0, FPR3, cr_value;
+	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+	UCHAR apidx = pObj->ioctl_if;
+
+	if (apidx >= pAd->ApCfg.BssidNum)
+		return FALSE;
+
+	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
+	BandIdx = HcGetBandByWdev(wdev);
+
+	if (BandIdx == BAND0) {
+		FPR0 = TMAC_FP0R0;
+		FPR3 = TMAC_FP0R3;
+	} else {
+		FPR0 = TMAC_FP1R0;
+		FPR3 = TMAC_FP1R3;
+	}
+
+	if (wdev->bPwrCtrlEn == FALSE) {
+		if (wdev->channel <= 14) {
+			RTMP_IO_READ32(pAd, FPR3, &cr_value);
+			Tx_Base_pwr = cr_value & CCK0_FRAME_POWER0_DBM_MASK;
+		} else {
+			RTMP_IO_READ32(pAd, FPR0, &cr_value);
+			Tx_Base_pwr = cr_value & LG_OFDM0_FRAME_POWER0_DBM_MASK;
+		}
+	} else {
+		Tx_Base_pwr = wdev->TxBasePwr;
+	}
+
+	Tx_Pwr = Tx_Base_pwr + wdev->TxPwrDelta;
+
+	MTWF_LOG(DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_OFF, ("[%s] Tx_Pwr = %d.%d db\n",
+		__func__, Tx_Pwr/2, ((Tx_Pwr%2 == 0) ? 0:5)));
+
+	return TRUE;
+}
+#endif
+

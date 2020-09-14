@@ -450,7 +450,7 @@ static INT CFG80211DRV_UpdateApSettingFromBeacon(PRTMP_ADAPTER pAd, UINT mbss_id
 #endif /* CONFIG_AP_SUPPORT */
 
 	pMbss->CapabilityInfo =	CAP_GENERATE(1, 0, (!IS_CIPHER_NONE(wdev->SecConfig.PairwiseCipher)),
-										 (pAd->CommonCfg.TxPreamble == Rt802_11PreambleLong ? 0 : 1), pAd->CommonCfg.bUseShortSlotTime, /*SpectrumMgmt*/FALSE);
+										 (pAd->CommonCfg.TxPreamble == Rt802_11PreambleLong ? 0 : 1), wdev->bUseShortSlotTime, /*SpectrumMgmt*/FALSE);
 
 #ifdef DOT11K_RRM_SUPPORT
 	if (IS_RRM_ENABLE(wdev))

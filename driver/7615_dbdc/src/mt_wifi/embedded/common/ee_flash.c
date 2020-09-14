@@ -104,7 +104,7 @@ extern int ra_mtd_read(int num, loff_t from, size_t len, u_char *buf);
 
 #else
 
-#if 0
+#ifdef CONFIG_WIFI_MTD
 /*
 * @ used mtd mode flash partition from proprietary driver mt_wifi_mtd.c
 */
